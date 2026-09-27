@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 REQUIRED = {"app", "project", "scheme", "unitTestTarget", "lintExcluded"}
-OPTIONAL = {"uiTestTarget", "xcodebuildExtraArgs", "versionSource", "reviewFocus", "notes"}
+OPTIONAL = {"uiTestTarget", "xcodebuildExtraArgs", "versionSource", "reviewFocus", "notes",
+            "github", "requiredChecks"}
 
 
 def fail(msg: str) -> None:

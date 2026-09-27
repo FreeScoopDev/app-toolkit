@@ -47,7 +47,7 @@ ERRLOG="${LOG}.stderr"
 BUNDLE="$(mktemp -d -t "$SLUG-test-bundle")/result.xcresult"   # must not pre-exist
 echo "App:     $APP_NAME ($ROOT)"
 echo "Running: $LABEL"
-echo "Log:     $LOG"
+echo "Log:     $LOG  (deleted if the run passes)"
 echo "Stderr:  $ERRLOG"
 echo "Bundle:  $BUNDLE"
 echo
@@ -102,6 +102,10 @@ if [[ "$XC_EXIT" -eq 0 ]] && grep -q '\*\* TEST SUCCEEDED \*\*' "$LOG" \
    && [[ "$B_RESULT" == "Passed" ]] && [[ "$B_FAILED" == "0" ]] \
    && [[ "$B_TOTAL" != "?" ]] && [[ "$B_TOTAL" -gt 0 ]]; then
   echo "** TEST SUCCEEDED **  ($LABEL)"
+  # A passing run's bundle and logs are never read again, and each bundle is
+  # 50-100 MB: 87 of them had filled 1.2 GB of a full disk on 2026-09-27.
+  # A failing run keeps them (paths printed below) for reading.
+  rm -rf -- "$(dirname "${BUNDLE:?}")" "${LOG:?}" "${ERRLOG:?}"
   exit 0
 fi
 

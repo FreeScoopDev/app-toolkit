@@ -1,0 +1,4 @@
+{
+  "github": "FreeScoopDev/app-toolkit",
+  "requiredChecks": ["Toolkit self-test"]
+}

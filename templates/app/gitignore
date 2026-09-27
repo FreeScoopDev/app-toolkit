@@ -1,0 +1,91 @@
+# ===========================
+# Xcode
+# ===========================
+
+# User-specific Xcode settings — machine-specific, not project state
+*.xcuserstate
+xcuserdata/
+
+# Xcode backup files
+*.xcbkptlist
+
+# Build artifacts — never commit compiled output
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+
+# Xcode profiling
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Playgrounds
+playground.xcworkspace
+timeline.xctimeline
+
+# ===========================
+# Swift Package Manager
+# ===========================
+.build/
+.swiftpm/
+
+# ===========================
+# CocoaPods (not used, but safe to include)
+# ===========================
+Pods/
+*.xcworkspace
+!*.xcodeproj/*.xcworkspace
+Podfile.lock
+
+# ===========================
+# Carthage (not used, but safe)
+# ===========================
+Carthage/Build/
+
+# ===========================
+# Environment & secrets
+# ===========================
+# NEVER commit secrets, keys, or credentials
+*.env
+.env.*
+Config.xcconfig
+Secrets.swift
+secrets.swift
+APIKeys.swift
+apikeys.swift
+GoogleService-Info.plist
+
+# ===========================
+# macOS
+# ===========================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# ===========================
+# IDE / Editor
+# ===========================
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# Claude Code: local settings and worktrees stay out of git; the shared
+# toolkit config (.claude/app.json) is the one tracked file.
+.claude/*
+!.claude/app.json

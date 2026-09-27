@@ -1,0 +1,36 @@
+# __APP__ SwiftLint config. The job in .github/workflows/guards.yml runs it on
+# every PR; locally, use scripts/lint.sh.
+#
+# Aimed at crash-class problems, not style. The size and naming rules are off:
+# they flag working code and bury the findings this config exists for.
+#
+# NOTE: `excluded` paths resolve relative to THIS file's directory. Keep this
+# file at the repo root, and keep the list equal to lintExcluded in
+# .claude/app.json (scripts/lint.sh aborts if they differ).
+disabled_rules:
+  - line_length
+  - trailing_whitespace
+  - identifier_name
+  - type_body_length
+  - function_body_length
+  - file_length
+  - cyclomatic_complexity
+  - todo
+  - large_tuple
+  - function_parameter_count
+  # Fight deliberate column alignment in property blocks.
+  - colon
+  - comma
+  # Wrong inside a @ViewBuilder: `let _ = x` is a declaration the builder
+  # skips; the bare `_ = x` this rule wants is a `()` statement the builder
+  # tries to render. Its autofix breaks builds.
+  - redundant_discardable_let
+opt_in_rules:
+  - force_unwrapping
+force_unwrapping:
+  severity: error
+force_cast: error
+force_try: error
+excluded:
+  - __UNIT_TESTS__
+  - docs
