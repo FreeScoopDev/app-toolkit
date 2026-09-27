@@ -5,7 +5,8 @@ Wockett. Created 2026-09-27. It lives here, outside the app repos, so no app
 depends on another: each repo carries a small config, thin wrappers, and a
 `CLAUDE.md` that imports `PROCESS.md` from here.
 
-GitHub: `FreeScoopDev/app-toolkit` (private). Checked out at `~/.claude/toolkit`.
+GitHub: `FreeScoopDev/app-toolkit`, public since 2026-09-27 (scripts and docs
+only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 
 | Start here | For |
 | --- | --- |
@@ -23,6 +24,7 @@ GitHub: `FreeScoopDev/app-toolkit` (private). Checked out at `~/.claude/toolkit`
 | `bin/new-app.sh <repo> <owner/name> [--local-only]` | Adds `templates/app` to a fresh Xcode project, commits, creates the public repo, applies the standard |
 | `lib/app_config.py <repo>` | Reads `<repo>/.claude/app.json`, prints shell assignments; rejects unknown keys |
 | `templates/app/` | The standard files a new app starts with; `__APP__`-style placeholders |
+| `tests/selftest.sh` | The toolkit's required check: runs every script on Linux, including the cases that must refuse and write nothing |
 
 ## Per-app config: `<repo>/.claude/app.json`
 
@@ -64,7 +66,8 @@ the same `app.json` (and the repo's `CLAUDE.md`) instead of naming an app.
 
 Work in a worktree of this repo, never in `~/.claude/toolkit` itself: that
 checkout is what every app's scripts run from, and what every app's
-`CLAUDE.md` imports. Change it through a PR, and pull it into
-`~/.claude/toolkit` after the merge. Run both apps' `scripts/test.sh` and
+`CLAUDE.md` imports. Change it through a PR, like an app: `tests/selftest.sh`
+is the required check (`.claude/app.json`), and the PR merges itself once it
+passes. Then pull it into `~/.claude/toolkit`. Run both apps' `scripts/test.sh` and
 `scripts/lint.sh` (with `APP_TOOLKIT` pointing at the worktree) before calling
 a change done, because it affects every app at once.
