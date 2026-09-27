@@ -1,0 +1,21 @@
+# The toolkit's required check on main. Runs tests/selftest.sh on Linux:
+# every script is exercised without Xcode or network, including the cases
+# where a script must refuse and write nothing.
+
+name: Self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  selftest:
+    name: Toolkit self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolkit self-test
+        run: tests/selftest.sh
