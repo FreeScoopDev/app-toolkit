@@ -1,0 +1,31 @@
+# Cheap, fast repo guards that need no Apple toolchain. They run on
+# ubuntu-latest (1x billing). Building and testing the app is Xcode Cloud's
+# job (docs/ci.md). Add app-specific wording guards here as jobs of their own.
+
+name: Guards
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  swiftlint:
+    name: SwiftLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Pinned to the version on Joe's Mac (`swiftlint version`) so
+    # scripts/lint.sh and this job judge the same rules; bump both together.
+    # Wockett ran 0.57.0 here against 0.65.1 locally for weeks, and the two
+    # disagreed about a force-unwrap.
+    container: ghcr.io/realm/swiftlint:0.65.1
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v5
+
+      # Any error-severity violation (force unwrap, force cast, try!) fails
+      # the job, and "SwiftLint" is a required check on main from day one.
+      - name: SwiftLint
+        run: swiftlint lint --reporter github-actions-logging
