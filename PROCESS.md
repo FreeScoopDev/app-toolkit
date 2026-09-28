@@ -21,19 +21,22 @@ Claude, in its own worktree:
 1. `git fetch`, then branches from `origin/main`, never a local `main`. A
    local `main` goes stale, and a branch cut from it silently leaves out
    merged work. One change per branch, prefixed `feat/`, `fix/`, `chore/`,
-   `docs/` or `test/`. **Never stack a PR on another branch.** Xcode Cloud's
-   `CI Tests` only builds PRs whose base is `main`.
+   `docs/` or `test/`. **Never stack a PR on another branch.** The test
+   workflows (GitHub Actions `tests.yml`, Xcode Cloud `CI Tests`) only run
+   PRs whose base is `main`, so a stacked PR gets no check until retargeted.
 2. Makes the change, adds its **changelog entry as a new file in
    `changelog.d/`** (format in that folder's README), and runs
    `scripts/test.sh`.
 3. Merges `origin/main` in, pushes the branch and opens the PR. The
    description says how each claim is known (see "Verifying claims").
 4. Queues the merge: `gh pr merge <N> --auto --squash`. Gives Joe the link.
-5. About 2 minutes later, confirms Xcode Cloud's `<App> | CI Tests` status
-   exists on the PR. If there is none, Xcode Cloud never got the event: re-fire
-   with `gh pr close <N> && gh pr reopen <N>`. Then check the merge is still
-   queued (`gh pr view <N> --json autoMergeRequest`) and queue it again if
-   not.
+5. About 2 minutes later, confirms every check named in the app's
+   `requiredChecks` (`.claude/app.json`) has appeared on the PR
+   (`gh pr checks <N>`). A check that never appears means its provider never
+   got the event: re-fire with `gh pr close <N> && gh pr reopen <N>`, which
+   re-sends the pull-request event to GitHub Actions and Xcode Cloud alike.
+   Then check the merge is still queued
+   (`gh pr view <N> --json autoMergeRequest`) and queue it again if not.
 6. Fixes anything that blocks the merge: a red check, or a conflict (merge
    `origin/main` in, run `scripts/test.sh`, push). GitHub squash-merges once
    every required check is green, and deletes the branch.
