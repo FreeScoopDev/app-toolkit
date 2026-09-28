@@ -140,6 +140,27 @@ assert d["permissions"] == {"allow": ["Read(x)"]}, d
 PY
 then ok "install-hooks adds one SessionStart hook and keeps the rest"; else bad "install-hooks: wrong result in $T/settings.json"; fi
 
+# release-build-check: match, a build past the release, a build behind it, one off the line.
+git init -q -b main "$T/rel-origin" 2>/dev/null || { git init -q "$T/rel-origin"; git -C "$T/rel-origin" checkout -q -b main; }
+( cd "$T/rel-origin" && printf 'a\n' > f && git add f && git commit -qm "feature" )
+FEATURE=$(git -C "$T/rel-origin" rev-parse HEAD)
+( cd "$T/rel-origin" && printf 'r\n' > f && git commit -qam "Release 1.0 (#9)" )
+REL=$(git -C "$T/rel-origin" rev-parse HEAD)
+( cd "$T/rel-origin" && printf 'b\n' > f && git commit -qam "after the cut (#10)" )
+LATER=$(git -C "$T/rel-origin" rev-parse HEAD)
+# A branch cut BEFORE the release: neither commit is an ancestor of the other.
+( cd "$T/rel-origin" && git checkout -q -b side "$FEATURE" && printf 's\n' > f && git commit -qam "side" && git checkout -q main )
+SIDE=$(git -C "$T/rel-origin" rev-parse side)
+git clone -q "$T/rel-origin" "$T/rel-joe"
+if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "${REL:0:7}" --merge-commit "$REL") && grep -q '^OK:' <<<"$out"; then ok "release-build-check accepts the release commit (short sha)"; else bad "release-build-check rejected the release commit: $out"; fi
+if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "$LATER" --merge-commit "$REL"); then bad "release-build-check accepted a build past the release"; else
+  if grep -q '^MISMATCH' <<<"$out" && grep -q '1 commit(s) after' <<<"$out" && grep -q 'after the cut (#10)' <<<"$out"; then ok "release-build-check names the commits a later build carries"; else bad "release-build-check mismatch output: $out"; fi; fi
+if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" --merge-commit "$LATER"); then bad "release-build-check accepted a build older than the release"; else
+  grep -q 'OLDER' <<<"$out" && ok "release-build-check says when the build is older than the release" || bad "release-build-check older-build output: $out"; fi
+git -C "$T/rel-joe" fetch -q origin side; if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "$SIDE" --merge-commit "$REL"); then bad "release-build-check accepted a build off the line"; else
+  grep -q 'not on the release commit' <<<"$out" && ok "release-build-check says when the build is off the line" || bad "release-build-check off-line output: $out"; fi
+code=0; "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" --bogus >/dev/null 2>&1 || code=$?; [[ $code -eq 2 ]] && ok "release-build-check refuses an unknown option" || bad "release-build-check unknown option exit $code"
+
 echo
 if [[ $FAILS -gt 0 ]]; then echo "$FAILS check(s) failed"; exit 1; fi
 echo "All checks passed."
