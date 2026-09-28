@@ -19,6 +19,7 @@
 #      failure here for that reason.
 #
 # Usage: test.sh <repo root> [--unit-only]
+#   TEST_OUTPUT_DIR=<dir>  keep the log and result bundle under <dir> (CI uploads them)
 set -euo pipefail
 
 TOOLKIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,9 +43,22 @@ fi
 
 SIM="$(bash "$TOOLKIT/bin/ci_pick_simulator.sh")"
 SLUG="$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")"
-LOG="$(mktemp -t "$SLUG-test")"
+# Where the log and the result bundle go. By default a fresh temp location;
+# TEST_OUTPUT_DIR puts them under a directory the caller chooses, which CI
+# needs to upload them after a failure. (Apple's `mktemp -t` ignores TMPDIR,
+# so setting that is not enough: seen on 2026-09-28, when a failed GitHub
+# Actions run uploaded nothing.)
+if [[ -n "${TEST_OUTPUT_DIR:-}" ]]; then
+  STAMP="$(date +%Y%m%d-%H%M%S)-$$"
+  mkdir -p "$TEST_OUTPUT_DIR"
+  LOG="$TEST_OUTPUT_DIR/$SLUG-test-$STAMP.log"
+  BUNDLE="$TEST_OUTPUT_DIR/$SLUG-test-bundle-$STAMP/result.xcresult"   # must not pre-exist
+  mkdir -p "$(dirname "$BUNDLE")"
+else
+  LOG="$(mktemp -t "$SLUG-test")"
+  BUNDLE="$(mktemp -d -t "$SLUG-test-bundle")/result.xcresult"   # must not pre-exist
+fi
 ERRLOG="${LOG}.stderr"
-BUNDLE="$(mktemp -d -t "$SLUG-test-bundle")/result.xcresult"   # must not pre-exist
 echo "App:     $APP_NAME ($ROOT)"
 echo "Running: $LABEL"
 echo "Log:     $LOG  (deleted if the run passes)"
