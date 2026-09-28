@@ -83,6 +83,32 @@ d = json.load(open(sys.argv[1])); d["requiredCheck"] = ["typo"]; json.dump(d, op
 PY
 refuses "app_config refuses an unknown key" "$T/cfg" python3 "$K/lib/app_config.py" "$T/cfg"
 
+# Agents: each file must parse as an agent Claude Code will load, with its
+# name matching the file (a mismatch or missing field loses the agent silently).
+if out=$(python3 - "$K/agents" <<'PY'
+import pathlib, sys
+bad = []
+files = sorted(pathlib.Path(sys.argv[1]).glob("*.md"))
+if not files:
+    bad.append("no agents found")
+for f in files:
+    text = f.read_text()
+    if not text.startswith("---\n") or "\n---\n" not in text[4:]:
+        bad.append(f"{f.name}: no frontmatter"); continue
+    head, body = text[4:].split("\n---\n", 1)
+    meta = dict(line.split(":", 1) for line in head.splitlines() if ":" in line and not line.startswith(" "))
+    meta = {k.strip(): v.strip() for k, v in meta.items()}
+    if meta.get("name") != f.stem:
+        bad.append(f"{f.name}: name is {meta.get('name')!r}, should be {f.stem!r}")
+    for key in ("description", "tools"):
+        if not meta.get(key):
+            bad.append(f"{f.name}: no {key}")
+    if len(body.strip()) < 200:
+        bad.append(f"{f.name}: body is nearly empty")
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+); then ok "agents: $(ls "$K"/agents/*.md | wc -l | tr -d ' ') files, each loadable"; else bad "agents: $out"; fi
+
 echo
 if [[ $FAILS -gt 0 ]]; then echo "$FAILS check(s) failed"; exit 1; fi
 echo "All checks passed."
