@@ -24,6 +24,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | `bin/new-app.sh <repo> <owner/name> [--local-only]` | Adds `templates/app` to a fresh Xcode project, commits, creates the public repo, applies the standard |
 | `lib/app_config.py <repo>` | Reads `<repo>/.claude/app.json`, prints shell assignments; rejects unknown keys |
 | `templates/app/` | The standard files a new app starts with; `__APP__`-style placeholders |
+| `agents/` | Joe's subagents; `~/.claude/agents/*.md` are symlinks to these |
 | `tests/selftest.sh` | The toolkit's required check: runs every script on Linux, including the cases that must refuse and write nothing |
 
 ## Per-app config: `<repo>/.claude/app.json`
@@ -59,8 +60,14 @@ where the toolkit is expected if it's missing.
 
 ## Agents
 
-`~/.claude/agents/critic.md`, `test-auditor.md` and `release-checker.md` read
-the same `app.json` (and the repo's `CLAUDE.md`) instead of naming an app.
+`agents/` holds Joe's five subagents: `critic`, `test-auditor`,
+`release-checker`, `crash-triage` and `aso-writer`. Moved here 2026-09-27, so
+they are backed up and change through PRs like everything else. Claude Code
+loads them from `~/.claude/agents/`, where each is a symlink to this folder.
+After editing one here, the change reaches new sessions once the PR merges and
+`~/.claude/toolkit` is pulled. They read the repo's `app.json` and `CLAUDE.md`
+instead of naming an app. The self-test checks each file still loads: its
+frontmatter, and a `name` that matches the file name.
 
 ## Changing anything here
 
