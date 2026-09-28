@@ -72,16 +72,23 @@ Joe then:
 1. Merges the release PR.
 2. Does the console steps, if the Ship Card lists any.
 3. App Store Connect → Apps → the app → Xcode Cloud → Release Flow → **Start
-   Build**. Waits for the app's Slack release channel and notes the build
-   number. Never predict the number: Xcode Cloud uses one counter across all
-   workflows, and every PR's `CI Tests` run consumes one.
+   Build**, right after the release PR merges: Release Flow archives whatever
+   `main` is at that moment, and routine PRs merge themselves. Waits for the
+   app's Slack release channel and gives Claude the build number **and the
+   commit named in the post**. Never predict the number: Xcode Cloud uses one
+   counter across all workflows, and every PR's `CI Tests` run consumes one.
+   Claude then runs `bin/release-build-check.sh <repo> <commit>`: the build
+   must be the release PR's merge commit, or it carries changes the Ship Card
+   never listed. A mismatch means no QA on that build; Claude lists the extra
+   commits and the next step is a fresh build or a fresh cut.
 4. Installs it from TestFlight, works through the QA cards, marks each Passed
    in Notion. A failure goes back through "Every change", then step 3 again.
 5. App Store Connect → Distribution → new version → Add Build → pastes What's
    New → Add for Review → Submit. Tells Claude "submitted build N".
 
 After step 5, Claude tags the build's commit `vX.Y` (lightweight) and pushes
-the tag, and sets the Notion Releases row to `In Review` with the build number.
+the tag, and sets the Notion Releases row to `In Review` with the build number
+and the commit the check confirmed.
 
 A **manual Xcode archive** is emergency-only, for when Xcode Cloud itself is
 down. It builds whatever is on disk in Joe's folder.

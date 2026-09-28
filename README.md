@@ -22,6 +22,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | `bin/ci_pick_simulator.sh` | Prints the UDID of the newest available iPhone simulator |
 | `bin/repo-check.sh <repo> [--apply]` | Compares the GitHub repo with the standard (public, squash only, auto-merge, "Protect main" requiring `requiredChecks`); `--apply` fixes it, except visibility |
 | `bin/new-app.sh <repo> <owner/name> [--local-only]` | Adds `templates/app` to a fresh Xcode project, commits, creates the public repo, applies the standard |
+| `bin/release-build-check.sh <repo> <commit>` | Says whether a Release Flow build's commit is the release PR's merge commit; lists the unlisted commits when it is not |
 | `bin/session-start.sh` | Claude Code SessionStart hook: says when the session's checkout is behind `origin/main` and prints the current `CLAUDE.md`; says when this toolkit checkout is behind. Silent when everything is current |
 | `bin/install-hooks.sh` | Registers that hook in `~/.claude/settings.json`, once; run after cloning the toolkit |
 | `lib/app_config.py <repo>` | Reads `<repo>/.claude/app.json`, prints shell assignments; rejects unknown keys |
