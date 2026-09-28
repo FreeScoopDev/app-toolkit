@@ -22,6 +22,8 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | `bin/ci_pick_simulator.sh` | Prints the UDID of the newest available iPhone simulator |
 | `bin/repo-check.sh <repo> [--apply]` | Compares the GitHub repo with the standard (public, squash only, auto-merge, "Protect main" requiring `requiredChecks`); `--apply` fixes it, except visibility |
 | `bin/new-app.sh <repo> <owner/name> [--local-only]` | Adds `templates/app` to a fresh Xcode project, commits, creates the public repo, applies the standard |
+| `bin/session-start.sh` | Claude Code SessionStart hook: says when the session's checkout is behind `origin/main` and prints the current `CLAUDE.md`; says when this toolkit checkout is behind. Silent when everything is current |
+| `bin/install-hooks.sh` | Registers that hook in `~/.claude/settings.json`, once; run after cloning the toolkit |
 | `lib/app_config.py <repo>` | Reads `<repo>/.claude/app.json`, prints shell assignments; rejects unknown keys |
 | `templates/app/` | The standard files a new app starts with; `__APP__`-style placeholders |
 | `agents/` | Joe's subagents; `~/.claude/agents/*.md` are symlinks to these |
@@ -68,6 +70,24 @@ After editing one here, the change reaches new sessions once the PR merges and
 `~/.claude/toolkit` is pulled. They read the repo's `app.json` and `CLAUDE.md`
 instead of naming an app. The self-test checks each file still loads: its
 frontmatter, and a `name` that matches the file name.
+
+## The session-start hook
+
+A session started in Joe's own checkout of an app reads that folder's
+`CLAUDE.md`. Claude never updates that folder (PROCESS.md, git rules), so the
+file drifts from `main`: on 2026-09-28 Wockett's was 13 commits behind and a
+session was handed a process replaced the day before. `bin/session-start.sh`
+runs at every session start (Claude Code adds its output to the session's
+context). When the checkout is behind `origin/main` it says so; when its
+`CLAUDE.md` also differs, it prints the current one from `origin/main`. It also
+says when `~/.claude/toolkit` itself is behind, with the fast-forward command.
+Up to date, it prints nothing. It never fails a session start: no `set -e`, a
+15 s watchdog on the fetch, exit 0 on every path.
+
+Install it once: `bin/install-hooks.sh` adds the hook to
+`~/.claude/settings.json` (idempotent, touches nothing else). The self-test
+proves the hook by building a repo that is behind its origin and checking the
+banner and the printed file, and proves the installer by running it twice.
 
 ## Changing anything here
 
