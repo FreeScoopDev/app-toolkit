@@ -96,6 +96,13 @@ down. It builds whatever is on disk in Joe's folder.
   `commit`. If it needs updating before an emergency archive, give Joe the
   command. Cost: a fast-forward that landed 14 s into a manual archive shipped
   a build without a merged fix (Wockett build 84).
+- **A session started in Joe's folder still gets the current rules.** That
+  folder is often behind `main`, and its `CLAUDE.md` with it. The toolkit's
+  SessionStart hook (`bin/session-start.sh`, installed once by
+  `bin/install-hooks.sh`) prints a STALE CHECKOUT banner with the current
+  `CLAUDE.md` from `origin/main` when that happens, and a TOOLKIT BEHIND
+  line when `~/.claude/toolkit` needs a fast-forward. If the banner is in
+  the session's context, follow the printed file, not the one on disk.
 - Every branch is pushed. A repo with no remote has no copy when a disk or a
   sync goes wrong (the 2026-09-26 iCloud move cost SqwatrApp its history).
 - In multi-step shell, `set -euo pipefail`. A failing guard does not stop a

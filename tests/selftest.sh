@@ -109,6 +109,37 @@ print("\n".join(bad)); sys.exit(1 if bad else 0)
 PY
 ); then ok "agents: $(ls "$K"/agents/*.md | wc -l | tr -d ' ') files, each loadable"; else bad "agents: $out"; fi
 
+# Session-start hook: silent when current, loud when behind, harmless elsewhere.
+git init -q -b main "$T/hook-origin" 2>/dev/null || { git init -q "$T/hook-origin"; git -C "$T/hook-origin" checkout -q -b main; }
+( cd "$T/hook-origin" && printf 'rules v1\n' > CLAUDE.md && git add CLAUDE.md && git commit -qm one )
+git clone -q "$T/hook-origin" "$T/hook-joe"
+out=$(printf '{"cwd":"%s","session_start_reason":"startup"}' "$T/hook-joe" | "$K/bin/session-start.sh")
+[[ -z "$out" ]] && ok "session-start is silent when the checkout is current" || bad "session-start spoke when current: $out"
+( cd "$T/hook-origin" && printf 'rules v2\n' > CLAUDE.md && git commit -qam two )
+out=$(printf '{"cwd":"%s","session_start_reason":"startup"}' "$T/hook-joe" | "$K/bin/session-start.sh")
+if grep -q '^STALE CHECKOUT: .* 1 commit(s) behind' <<<"$out" && grep -qx 'rules v2' <<<"$out"; then ok "session-start prints origin/main's CLAUDE.md when behind"
+else bad "session-start missed a stale checkout: $out"; fi
+( cd "$T/hook-origin" && printf 'rules v2\n' > CLAUDE.md && printf 'x\n' > other && git add other && git commit -qm three )
+git -C "$T/hook-joe" -c advice.detachedHead=false pull -q --ff-only origin main 2>/dev/null; ( cd "$T/hook-joe" && git reset -q --hard HEAD~1 )
+out=$(printf '{"cwd":"%s"}' "$T/hook-joe" | "$K/bin/session-start.sh")
+if grep -q 'STALE CHECKOUT' <<<"$out" && grep -q 'matches origin/main' <<<"$out" && ! grep -q 'end of CLAUDE.md' <<<"$out"; then ok "session-start does not reprint an unchanged CLAUDE.md"
+else bad "session-start on a behind checkout with the same CLAUDE.md: $out"; fi
+out=$(printf '{"cwd":"%s"}' "$T" | "$K/bin/session-start.sh"); [[ -z "$out" ]] && ok "session-start is silent outside a repo" || bad "session-start spoke outside a repo: $out"
+if printf 'not json' | "$K/bin/session-start.sh" >/dev/null; then ok "session-start exits 0 on bad input"; else bad "session-start failed on bad input"; fi
+
+# install-hooks: one entry, idempotent, nothing else touched.
+printf '{"permissions":{"allow":["Read(x)"]}}\n' > "$T/settings.json"
+CLAUDE_SETTINGS_FILE="$T/settings.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null
+CLAUDE_SETTINGS_FILE="$T/settings.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null
+if python3 - "$T/settings.json" "$K" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+cmds = [h["command"] for e in d["hooks"]["SessionStart"] for h in e["hooks"]]
+assert cmds == [sys.argv[2] + "/bin/session-start.sh"], cmds
+assert d["permissions"] == {"allow": ["Read(x)"]}, d
+PY
+then ok "install-hooks adds one SessionStart hook and keeps the rest"; else bad "install-hooks: wrong result in $T/settings.json"; fi
+
 echo
 if [[ $FAILS -gt 0 ]]; then echo "$FAILS check(s) failed"; exit 1; fi
 echo "All checks passed."
