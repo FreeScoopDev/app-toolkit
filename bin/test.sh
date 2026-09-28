@@ -18,8 +18,9 @@
 #      and still print TEST SUCCEEDED. A run of 0 tests is reported as a
 #      failure here for that reason.
 #
-# Usage: test.sh <repo root> [--unit-only]
-#   TEST_OUTPUT_DIR=<dir>  keep the log and result bundle under <dir> (CI uploads them)
+# Usage: test.sh <repo root> [--unit-only | --ui-only]
+#   TEST_OUTPUT_DIR=<dir>        keep the log and result bundle under <dir> (CI uploads them)
+#   TEST_XCODEBUILD_ARGS="..."   extra xcodebuild arguments for this run (CI's UI job)
 set -euo pipefail
 
 TOOLKIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,10 +36,22 @@ ONLY=()
 LABEL="full $APP_SCHEME scheme, same as CI"
 if [[ "${1:-}" == "--unit-only" ]]; then
   ONLY=("-only-testing:$APP_UNIT_TARGET")
-  LABEL="$APP_UNIT_TARGET only, NOT what CI runs"
+  LABEL="$APP_UNIT_TARGET only, NOT the full scheme"
+elif [[ "${1:-}" == "--ui-only" ]]; then
+  # CI runs the two targets as two parallel jobs; each half is half the
+  # scheme, and the pair together is what a local run does in one go.
+  [[ -n "${APP_UI_TARGET:-}" ]] || { echo "$APP_NAME has no uiTestTarget in .claude/app.json" >&2; exit 2; }
+  ONLY=("-only-testing:$APP_UI_TARGET")
+  LABEL="$APP_UI_TARGET only, NOT the full scheme"
 elif [[ -n "${1:-}" ]]; then
-  echo "unknown option: $1 (only --unit-only is supported)" >&2
+  echo "unknown option: $1 (--unit-only and --ui-only are supported)" >&2
   exit 2
+fi
+# Extra xcodebuild arguments for one run, on top of app.json's, e.g. CI's UI
+# job passes "-parallel-testing-enabled NO" so the runner boots one simulator.
+EXTRA=()
+if [[ -n "${TEST_XCODEBUILD_ARGS:-}" ]]; then
+  read -r -a EXTRA <<<"$TEST_XCODEBUILD_ARGS"
 fi
 
 SIM="$(bash "$TOOLKIT/bin/ci_pick_simulator.sh")"
@@ -74,6 +87,7 @@ xcodebuild test \
   -resultBundlePath "$BUNDLE" \
   ${ONLY[@]+"${ONLY[@]}"} \
   ${APP_XCODEBUILD_EXTRA[@]+"${APP_XCODEBUILD_EXTRA[@]}"} \
+  ${EXTRA[@]+"${EXTRA[@]}"} \
   > "$LOG" 2> "$ERRLOG"
 XC_EXIT=$?
 set -e
