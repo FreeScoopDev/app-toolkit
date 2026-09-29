@@ -192,6 +192,271 @@ git -C "$T/rel-joe" fetch -q origin side; if out=$("$K/bin/release-build-check.s
   grep -q 'not on the release commit' <<<"$out" && ok "release-build-check says when the build is off the line" || bad "release-build-check off-line output: $out"; fi
 code=0; "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" --bogus >/dev/null 2>&1 || code=$?; [[ $code -eq 2 ]] && ok "release-build-check refuses an unknown option" || bad "release-build-check unknown option exit $code"
 
+# cloudkit-schema-check: the fields a SwiftData model needs in CloudKit, and a
+# schema export compared with them. The model mixes every case: an optional,
+# an array, Data (with its large-value field), relationships both ways, and
+# things that are not stored (@Transient, computed, static, a nested enum).
+CK="$T/ck-app"; mkdir -p "$CK/App/Models" "$CK/AppTests"
+cat > "$CK/App/Models/Trip.swift" <<'SWIFT'
+import SwiftData
+@Model
+final class Trip {
+    var id: UUID = UUID()
+    var name: String = "" // a comment with a { brace
+    var startDate: Date?
+    var tags: [String] = []
+    @Attribute(.externalStorage)
+    var photo: Data?
+    var rating: Int = 0
+    var score: Double = 0
+    var isFavorite: Bool = false
+    @Relationship(deleteRule: .cascade,
+                  inverse: \Stop.trip)
+    var stops: [Stop]? = []
+    @Transient var cached: String = ""
+    var summary: String { "\(name) {" }
+    static let kind = "trip"
+    enum Mode: String { case a, b }
+    init() {}
+    func rename(to newName: String) { let n = newName; name = n }
+}
+SWIFT
+cat > "$CK/App/Models/Stop.swift" <<'SWIFT'
+import SwiftData
+@Model final class Stop {
+    var id: UUID = UUID()
+    private(set) var title: String = ""
+    var trip: Trip?
+    init() {}
+}
+SWIFT
+printf 'import SwiftData\n@Model final class OnlyInTests { var x: Int = 0\n init() {} }\n' > "$CK/AppTests/Fake.swift"
+ck_record() { # ck_record <name> <field lines...>: one record type of an export
+  local name=$1; shift
+  printf '    RECORD TYPE %s (\n        "___createTime" TIMESTAMP,\n        "___createdBy"  REFERENCE,\n        "___etag"       STRING,\n        "___modTime"    TIMESTAMP,\n        "___modifiedBy" REFERENCE,\n        "___recordID"   REFERENCE QUERYABLE,\n' "$name"
+  printf '%s\n' "$@"
+  printf '        GRANT WRITE TO "_creator",\n        GRANT CREATE TO "_icloud",\n        GRANT READ TO "_world"\n    );\n\n'; }
+TRIP=('        CD_entityName   STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_id           STRING QUERYABLE SEARCHABLE SORTABLE,'
+      '        CD_isFavorite   INT64 QUERYABLE SORTABLE,' '        CD_name         STRING QUERYABLE SEARCHABLE SORTABLE,'
+      '        CD_photo        BYTES,' '        CD_photo_ckAsset ASSET,' '        CD_rating       INT64 QUERYABLE SORTABLE,'
+      '        CD_score        DOUBLE QUERYABLE SORTABLE,' '        CD_startDate    TIMESTAMP QUERYABLE SORTABLE,'
+      '        CD_tags         BYTES QUERYABLE,')
+STOP=('        CD_entityName   STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_id           STRING QUERYABLE SEARCHABLE SORTABLE,'
+      '        "CD_title"      STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_trip         STRING QUERYABLE SEARCHABLE SORTABLE,')
+{ printf 'DEFINE SCHEMA\n\n'; ck_record CD_Trip "${TRIP[@]}" '        CD_oldField     STRING,'; ck_record CD_Stop "${STOP[@]}"
+  ck_record Users '        roles           LIST<INT64>,'; } > "$T/ck-full.ckdb"
+{ printf 'DEFINE SCHEMA\n\n'
+  ck_record CD_Trip "${TRIP[0]}" "${TRIP[1]}" "${TRIP[2]}" "${TRIP[3]}" "${TRIP[4]}" \
+    '        CD_rating       STRING QUERYABLE SEARCHABLE SORTABLE,' "${TRIP[7]}" "${TRIP[9]}"; } > "$T/ck-gaps.ckdb"
+out=$("$K/bin/cloudkit-schema-check.sh" "$CK" 2>&1) || true
+if grep -q '^CD_Trip: 10 fields, 16 in CloudKit Console$' <<<"$out" && grep -q '^CD_Stop: 4 fields, 10 in CloudKit Console$' <<<"$out" \
+   && grep -qE '^  CD_trip +String +to-one relationship$' <<<"$out" && grep -qE '^  CD_photo_ckAsset +Asset' <<<"$out" \
+   && grep -qE '^  CD_startDate +Date/Time +optional$' <<<"$out" && grep -qE '^  CD_tags +Bytes$' <<<"$out" \
+   && ! grep -qE 'CD_(stops|cached|summary|kind|Mode|OnlyInTests|rename|n)\b' <<<"$out"; then
+  ok "cloudkit-schema-check lists the fields a model needs, and nothing that isn't stored"
+else bad "cloudkit-schema-check model fields: $out"; fi
+code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$CK" "$T/ck-full.ckdb" 2>&1) || code=$?
+if [[ $code -eq 0 ]] && grep -q '^OK: ck-full.ckdb has every field the models need (2 record types)' <<<"$out" \
+   && grep -q 'CD_Trip: in the schema but not in the models.*CD_oldField' <<<"$out"; then
+  ok "cloudkit-schema-check accepts a complete schema, and notes a field no model has"
+else bad "cloudkit-schema-check complete schema (exit $code): $out"; fi
+code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$CK" "$T/ck-gaps.ckdb" 2>&1) || code=$?
+if [[ $code -eq 1 ]] && grep -q 'CD_Stop: the whole record type' <<<"$out" \
+   && grep -q "CD_Trip: CD_startDate (Date/Time): a record that sets it can't sync" <<<"$out" \
+   && grep -q "CD_Trip: CD_photo_ckAsset (Asset): a large value can't sync" <<<"$out" \
+   && grep -q 'CD_Trip: CD_rating is STRING in the schema, but the model needs INT64' <<<"$out" \
+   && ! grep -q 'CD_score' <<<"$out"; then
+  ok "cloudkit-schema-check names each missing record type, field and wrong type"
+else bad "cloudkit-schema-check gaps (exit $code): $out"; fi
+cp "$T/ck-full.ckdb" "$T/ck-nonopt.ckdb"; sed -i.bak '/CD_name /d' "$T/ck-nonopt.ckdb"
+code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$CK" "$T/ck-nonopt.ckdb" 2>&1) || code=$?
+[[ $code -eq 1 ]] && grep -q "CD_Trip: CD_name (String): no record of this type can sync" <<<"$out" \
+  && ok "cloudkit-schema-check says a missing always-set field stops every record" || bad "cloudkit-schema-check non-optional (exit $code): $out"
+code=0; printf 'not a schema\n' > "$T/ck-bogus.ckdb"; "$K/bin/cloudkit-schema-check.sh" "$CK" "$T/ck-bogus.ckdb" >/dev/null 2>&1 || code=$?
+code2=0; "$K/bin/cloudkit-schema-check.sh" >/dev/null 2>&1 || code2=$?
+[[ $code -eq 2 && $code2 -eq 2 ]] && ok "cloudkit-schema-check refuses a file that isn't a schema, and no arguments" || bad "cloudkit-schema-check refusals: exit $code, $code2"
+# Rarer ways to write a model, each of which an earlier parse got wrong without
+# saying so: @SwiftData.Model, and @ Model with a space; a doc comment that
+# mentions @Model; attributes, nonisolated or package between it and class;
+# between two models, a one-line raw string that starts with three quotes and
+# regex literals holding /*, an escaped delimiter, or spanning lines after
+# trailing spaces; types inferred from Date.now and UUID().uuidString, and ones
+# that can't be (Date().formatted() isn't a Date); two
+# bindings on a line, also after a multi-line array or a range; a stored
+# optional with didSet; nested parentheses in an attribute; Optional<T>; module
+# prefixes; a backquoted name; types inferred from the default; package and
+# private(set) with no space; a raw string with a quote and a parenthesis; one
+# property in both #if branches; TimeInterval; a Codable value; an interpolation
+# holding a quoted brace; and what isn't stored: @Attribute(.ephemeral), a
+# getter, a computed property whose brace is on its own line, and a property in
+# nested block comments.
+CK2="$T/ck-app2"; mkdir -p "$CK2/App"
+cat > "$CK2/App/Models.swift" <<'SWIFT'
+import SwiftData
+/** The @Model everything else hangs off. */
+@ Model
+@MainActor
+final class Alpha {
+    var a = 0, b: Int = 1
+    var watched: String? { didSet { print("changed") } }
+    @Attribute(.transformable(by: Box(rawValue: "")))
+    var blob: Colour?
+    var beta: Optional<Beta>
+    var betas: Swift.Array<Beta> = []
+    var `default`: Bool = false
+    var id = UUID()
+    var logo = Data()
+    package var secret: String = ""
+    private(set)var tight: Int = 0
+    var pattern: String = #"a"(b"#
+    var span: Range<Int> = 0..<5, count: Int = 0
+#if DEBUG
+    var mode: String = "debug"
+#else
+    var mode: String = "release"
+#endif
+    @Attribute(.ephemeral) var scratch: String = ""
+    var getter: Int { get { a } }
+    /* outer /* inner */ var hidden: Int = 0 */
+    init() {}
+}
+let quote = #"""#
+let trailingSlashes = #/\/*$/#
+let escaped = #/a\/#\{/#
+SWIFT
+printf 'let multiLine = #/  \n  """\n/#\n' >> "$CK2/App/Models.swift"
+cat >> "$CK2/App/Models.swift" <<'SWIFT'
+@SwiftData.Model nonisolated package final class Beta {
+    var alphas: [Alpha] = []
+    var name = "x"
+    var icon: Foundation.Data?
+    var codes: [Int] = [
+        1,
+        2
+    ], flag = true
+    var elapsed: TimeInterval = 0
+    var label: String = "\(String(describing: "}"))"
+    var createdAt = Date.now
+    var key = UUID().uuidString
+    var status = Status.active
+    var dayKey = Date().formatted(date: .numeric, time: .omitted)
+    var summary: String
+    {
+        name
+    }
+    init() {}
+}
+SWIFT
+out=$("$K/bin/cloudkit-schema-check.sh" "$CK2" 2>&1) || true
+if grep -q '^CD_Alpha: 16 fields, 22 in CloudKit Console$' <<<"$out" && grep -q '^CD_Beta: 12 fields, 18 in CloudKit Console$' <<<"$out" \
+   && grep -qE '^  CD_a +Int\(64\)$' <<<"$out" && grep -qE '^  CD_b +Int\(64\)$' <<<"$out" && grep -qE '^  CD_default +Int\(64\)$' <<<"$out" \
+   && grep -qE '^  CD_watched +String +optional$' <<<"$out" && grep -qE '^  CD_blob +Bytes +optional, a Codable value: one field assumed, check by hand$' <<<"$out" \
+   && grep -qE '^  CD_beta +String +to-one relationship$' <<<"$out" && grep -qE '^  CD_id +String$' <<<"$out" \
+   && grep -qE '^  CD_logo_ckAsset +Asset' <<<"$out" && grep -qE '^  CD_name +String$' <<<"$out" \
+   && grep -qE '^  CD_icon_ckAsset +Asset' <<<"$out" && grep -qE '^  CD_flag +Int\(64\)$' <<<"$out" \
+   && grep -qE '^  CD_secret +String$' <<<"$out" && grep -qE '^  CD_tight +Int\(64\)$' <<<"$out" && grep -qE '^  CD_pattern +String$' <<<"$out" \
+   && grep -qE '^  CD_span +Bytes +a Codable value' <<<"$out" && grep -qE '^  CD_count +Int\(64\)$' <<<"$out" \
+   && [[ $(grep -cE '^  CD_mode +String$' <<<"$out") -eq 1 ]] && grep -qE '^  CD_elapsed +Double$' <<<"$out" \
+   && grep -qE '^  CD_label +String$' <<<"$out" && grep -qE '^  CD_createdAt +Date/Time$' <<<"$out" && grep -qE '^  CD_key +String$' <<<"$out" \
+   && grep -qE '^  CD_status +unknown +type not inferred, not checked$' <<<"$out" && grep -qE '^  CD_dayKey +unknown +type not inferred, not checked$' <<<"$out" \
+   && grep -q '^Type not checked (none written, none inferred): CD_Beta.CD_dayKey, CD_Beta.CD_status$' <<<"$out" \
+   && grep -q 'many-to-many between Alpha and Beta' <<<"$out" && ! grep -qE 'CD_(scratch|getter|betas|alphas|summary|hidden)\b' <<<"$out"; then
+  ok "cloudkit-schema-check reads the rarer ways to write a model, and notes a many-to-many relationship"
+else bad "cloudkit-schema-check rarer model forms: $out"; fi
+# What it can't read stops the check (exit 2, naming where) rather than drop a
+# model or a field and report OK: two models with one name and no typealias to
+# choose, or typealiases in #if branches that choose differently; inheritance; an @Model on something else, a declaration it can't
+# parse or doesn't know, one declared with two types in #if branches, and what
+# a bare regex literal (/.../, which the check doesn't read) can do: brackets
+# that don't balance, statements run together, and a model swallowed.
+mkdir -p "$T/ck-dup/V1" "$T/ck-dup/V2" "$T/ck-sub" "$T/ck-struct" "$T/ck-tuple" "$T/ck-word" "$T/ck-leak" "$T/ck-merged" "$T/ck-angle" "$T/ck-twice" "$T/ck-swallow" "$T/ck-ifalias"
+printf 'enum V1 {\n@Model final class Item { var a: Int = 0\n init() {} }\n}\n' > "$T/ck-dup/V1/Item.swift"
+printf 'enum V2 {\n@Model final class Item { var a: Int = 0\n var b: String = ""\n init() {} }\n}\n' > "$T/ck-dup/V2/Item.swift"
+printf '@Model final class Other { var z: Int = 0\n init() {} }\n' > "$T/ck-dup/Other.swift"
+cp -R "$T/ck-dup/." "$T/ck-ifalias/"
+printf '#if LEGACY_STORE\ntypealias Item = V1.Item\n#else\ntypealias Item = V2.Item\n#endif\n' > "$T/ck-ifalias/Current.swift"
+printf '@Model class Base { var a: Int = 0\n init() {} }\n@Model final class Sub: Base { var b: Int = 0 }\n' > "$T/ck-sub/M.swift"
+printf '@Model final class Ok { var a: Int = 0\n init() {} }\n@Model\nstruct NotAClass { var a = 0 }\n' > "$T/ck-struct/M.swift"
+printf '@Model final class E {\n var (x, y): (Int, Int) = (0, 0)\n init() {} }\n' > "$T/ck-tuple/M.swift"
+printf '@Model final class W {\n    mystery var a: Int = 0\n    init() {}\n}\n' > "$T/ck-word/M.swift"
+printf '@Model final class G {\n    var lo = a<b, hi: Int = 0\n    init() {}\n}\n' > "$T/ck-angle/M.swift"
+printf '@Model final class D {\n#if DEBUG\n    var m: Int = 0\n#else\n    var m: String = ""\n#endif\n    init() {}\n}\n' > "$T/ck-twice/M.swift"
+cat > "$T/ck-swallow/M.swift" <<'SWIFT'
+@Model final class A { var a: Int = 0
+  init() {} }
+let r = /"""/
+@Model final class B { var b: Int = 0
+  init() {} }
+SWIFT
+cat > "$T/ck-leak/U.swift" <<'SWIFT'
+@Model final class U {
+    let re = /\}/
+    var after: Int = 0
+    init() {}
+}
+SWIFT
+cat > "$T/ck-merged/U2.swift" <<'SWIFT'
+@Model final class U2 {
+    let re = /\(/
+    var after: Int = 0
+    let close = /\)/
+    init() {}
+}
+SWIFT
+refused=""
+for c in "ck-dup:@Model classes named Item (V1 in V1/Item.swift, V2 in V2/Item.swift)" "ck-sub:Sub inherits from the model Base" \
+         "ck-struct:M.swift:3: an @Model this check can't read" "ck-tuple:E: can't read the declaration: var (x, y)" \
+         "ck-word:W: can't read the declaration: mystery var a" "ck-leak:U.swift: its brackets don't balance" \
+         "ck-merged:U2: can't read the declaration: let re" "ck-angle:G: can't read the declaration: var lo = a<b, hi" \
+         "ck-twice:D: m is declared twice, with different types" \
+         "ck-swallow:M.swift: @Model appears 2 times but 1 outside comments and strings" \
+         "ck-ifalias:@Model classes named Item (V1 in V1/Item.swift, V2 in V2/Item.swift)"; do
+  code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$T/${c%%:*}" 2>&1) || code=$?
+  [[ $code -eq 2 ]] && grep -qF "${c#*:}" <<<"$out" || refused+=" ${c%%:*} (exit $code: $out)"
+done
+[[ -z $refused ]] && ok "cloudkit-schema-check stops on Swift it can't read, duplicate model names and inheritance" \
+  || bad "cloudkit-schema-check didn't stop on:$refused"
+# Schema versions: a top-level typealias names the one in use, directly or
+# through an alias of its schema; with none, the one at top level is current
+# (a typealias inside a type is local to it and doesn't count).
+mkdir -p "$T/ck-ver" "$T/ck-ver2" "$T/ck-ver3"; cp -R "$T/ck-dup/." "$T/ck-ver/"; cp -R "$T/ck-dup/." "$T/ck-ver2/"
+printf 'typealias Item = V2.Item\n' > "$T/ck-ver/Current.swift"
+printf 'typealias CurrentSchema = V2\ntypealias Item = CurrentSchema.Item\n' > "$T/ck-ver2/Current.swift"
+printf '@Model final class Item { var a: Int = 0\n var b: String = ""\n init() {} }\n' > "$T/ck-ver3/Item.swift"
+printf 'enum V1 {\n@Model final class Item { var a: Int = 0\n init() {} }\n}\nenum Plan {\n typealias Item = V1.Item\n}\n' > "$T/ck-ver3/V1.swift"
+versions=""
+for v in ck-ver ck-ver2 ck-ver3; do
+  code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$T/$v" 2>&1) || code=$?
+  [[ $code -eq 0 ]] && grep -q '^CD_Item: 3 fields, 9 in CloudKit Console$' <<<"$out" && grep -qE '^  CD_b +String$' <<<"$out" || versions+=" $v (exit $code: $out)"
+done
+[[ -z $versions ]] && ok "cloudkit-schema-check takes the schema version in use: named by a top-level typealias, or the one at top level" \
+  || bad "cloudkit-schema-check schema versions:$versions"
+# The export side: an encrypted field, a relationship stored as a REFERENCE, an
+# assumed type that differs (a note, not a failure), a record type no model
+# has, and the CDMR record type many-to-many links use.
+{ printf 'DEFINE SCHEMA\n\n'
+  ck_record CD_Alpha '        CD_a            INT64 QUERYABLE SORTABLE,' '        CD_b            INT64 QUERYABLE SORTABLE,' \
+    '        CD_beta         REFERENCE QUERYABLE,' '        CD_blob         STRING,' '        CD_count        INT64 QUERYABLE SORTABLE,' \
+    '        CD_default      INT64 QUERYABLE SORTABLE,' '        CD_entityName   STRING QUERYABLE SEARCHABLE SORTABLE,' \
+    '        CD_id           ENCRYPTED STRING,' '        CD_logo         BYTES,' '        CD_logo_ckAsset ASSET,' \
+    '        CD_mode         STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_pattern      STRING QUERYABLE SEARCHABLE SORTABLE,' \
+    '        CD_secret       STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_span         BYTES,' \
+    '        CD_tight        INT64 QUERYABLE SORTABLE,' '        CD_watched      STRING QUERYABLE SEARCHABLE SORTABLE,'
+  ck_record CD_Beta '        CD_codes        BYTES,' '        CD_createdAt    TIMESTAMP QUERYABLE SORTABLE,' '        CD_dayKey       STRING QUERYABLE SEARCHABLE SORTABLE,' \
+    '        CD_elapsed      DOUBLE QUERYABLE SORTABLE,' \
+    '        CD_entityName   STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_flag         INT64 QUERYABLE SORTABLE,' \
+    '        CD_icon         BYTES,' '        CD_icon_ckAsset ASSET,' '        CD_key          STRING QUERYABLE SEARCHABLE SORTABLE,' \
+    '        CD_label        STRING QUERYABLE SEARCHABLE SORTABLE,' '        CD_name         STRING QUERYABLE SEARCHABLE SORTABLE,' \
+    '        CD_status       BYTES,'
+  ck_record CD_Gone '        CD_entityName   STRING QUERYABLE SEARCHABLE SORTABLE,'
+  ck_record CDMR '        CD_entityNames  STRING QUERYABLE,' '        CD_recordNames  STRING QUERYABLE,'; } > "$T/ck-app2.ckdb"
+code=0; out=$("$K/bin/cloudkit-schema-check.sh" "$CK2" "$T/ck-app2.ckdb" 2>&1) || code=$?
+if [[ $code -eq 0 ]] && grep -q '^OK: ck-app2.ckdb has every field the models need (2 record types)' <<<"$out" \
+   && grep -q 'CD_Alpha: CD_blob is STRING in the schema; the check assumed BYTES' <<<"$out" \
+   && grep -q 'CD_Gone: no model matches it' <<<"$out" && grep -q 'the schema has a CDMR record type' <<<"$out"; then
+  ok "cloudkit-schema-check reads encrypted fields and REFERENCE relationships, and only notes an assumed type"
+else bad "cloudkit-schema-check export forms (exit $code): $out"; fi
+
 echo
 if [[ $FAILS -gt 0 ]]; then echo "$FAILS check(s) failed"; exit 1; fi
 echo "All checks passed."

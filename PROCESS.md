@@ -62,7 +62,13 @@ Why `changelog.d/`: every open PR used to add its entry at the same line of
 Claude opens the **release PR**: it moves every `changelog.d/` entry into
 `CHANGELOG.md` under the new version's headings, deletes those files (the
 README stays), bumps `MARKETING_VERSION`, and runs the `release-checker`
-agent. **The release PR is never auto-merged. Merging it is Joe's decision to
+agent. For an app that syncs with CloudKit, Claude also asks Joe for an export
+of the Production schema (CloudKit Console → the container → Production →
+Export Schema…) and checks it with `bin/cloudkit-schema-check.sh`. When
+Production lacks a field the models need, a record of that type that sets it
+can't sync from a TestFlight or App Store build (every record of the type, for
+a field that's always set), and nothing in the code shows it (PlowR 1.2.0 had
+ten). **The release PR is never auto-merged. Merging it is Joe's decision to
 ship.** Its description starts with a **Ship Card**:
 
 - **What's New**: App Store copy covering everything users have not seen since
