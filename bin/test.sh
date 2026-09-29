@@ -121,7 +121,10 @@ except Exception:
 
 # Log-derived counts, for comparison only.
 LOG_LINES=$(grep -cE "^Test case '[^']+'" "$LOG" || true)
-ERRORS=$(cat "$LOG" "$ERRLOG" | grep -cE " error: " || true)
+# Compiler errors only ("/path/File.swift:12:3: error: ..."). On one simulator
+# the app's own output reaches this log, and Core Data prints its store
+# diagnostics as "CoreData: error: ...": 2452 such lines in a passing run.
+ERRORS=$(cat "$LOG" "$ERRLOG" | grep -cE "^(/[^:]+:[0-9]+:([0-9]+:)? )?error: " || true)
 
 echo "xcodebuild exit : $XC_EXIT"
 if [[ "$B_RESULT" == "?" ]]; then
