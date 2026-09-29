@@ -147,6 +147,17 @@ out=$(printf '{"cwd":"%s"}' "$T" | HOME="$H" PATH="$T/fakebin:$PATH" "$K/bin/ses
 if [[ -z "$out" && "$(cat "$T/deleted.log" 2>/dev/null)" == "OLD" ]]; then ok "session-start deletes only old, shut-down test clones, silently"
 else bad "session-start clone clean-up: output '$out', deleted '$(cat "$T/deleted.log" 2>/dev/null | tr '\n' ' ')'"; fi
 
+# Session-start empties the simulators' Dead folders of what is over two
+# hours old, and nothing else, silently.
+DD="$H/Library/Developer/CoreSimulator/Devices/SIM1/data/Library/Caches/com.apple.containermanagerd/Dead"
+mkdir -p "$DD/temp.OLD/X/App.app" "$DD/temp.NEW/X/App.app" "$DD/keep"
+python3 -c 'import os, sys, time
+t = time.time() - 3 * 3600
+for u in ("temp.OLD", "keep"): os.utime(os.path.join(sys.argv[1], u), (t, t))' "$DD"
+out=$(printf '{"cwd":"%s"}' "$T" | HOME="$H" PATH="$T/fakebin:$PATH" "$K/bin/session-start.sh")
+if [[ -z "$out" && ! -e "$DD/temp.OLD" && -d "$DD/temp.NEW" && -d "$DD/keep" ]]; then ok "session-start empties only old entries of the simulators' Dead folders, silently"
+else bad "session-start Dead clean-up: output '$out', left: $(ls "$DD" | tr '\n' ' ')"; fi
+
 # install-hooks: one entry, idempotent, nothing else touched.
 printf '{"permissions":{"allow":["Read(x)"]}}\n' > "$T/settings.json"
 CLAUDE_SETTINGS_FILE="$T/settings.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null
