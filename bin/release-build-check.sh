@@ -3,7 +3,7 @@
 # Checks that a Release Flow build came from the release PR's merge commit.
 #
 # Why: Release Flow archives whatever `main` is when Joe clicks Start, and
-# routine PRs auto-merge. On 2026-09-26 build 155 was started seven minutes
+# routine PRs keep merging. On 2026-09-26 build 155 was started seven minutes
 # after the release PR merged and matched; five feature PRs landed on `main`
 # over the next day. A click a day later would have shipped them under the
 # previous version's What's New and QA cards, unlisted. Xcode Cloud's Slack

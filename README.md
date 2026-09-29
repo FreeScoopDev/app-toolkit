@@ -11,7 +11,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | Start here | For |
 | --- | --- |
 | `PROCESS.md` | How every change and every release ships, for every app |
-| `NEW-APP.md` | Starting a new app, from Xcode to the first auto-merged PR |
+| `NEW-APP.md` | Starting a new app, from Xcode to the first merged PR |
 
 ## Layout
 
