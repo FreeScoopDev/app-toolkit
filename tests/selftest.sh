@@ -127,6 +127,26 @@ else bad "session-start on a behind checkout with the same CLAUDE.md: $out"; fi
 out=$(printf '{"cwd":"%s"}' "$T" | "$K/bin/session-start.sh"); [[ -z "$out" ]] && ok "session-start is silent outside a repo" || bad "session-start spoke outside a repo: $out"
 if printf 'not json' | "$K/bin/session-start.sh" >/dev/null; then ok "session-start exits 0 on bad input"; else bad "session-start failed on bad input"; fi
 
+# Session-start deletes leftover test clones: shut down and over two hours
+# old only, silently. A fake xcrun lists four devices and logs deletes.
+H="$T/clone-home"; D="$H/Library/Developer/XCTestDevices"; mkdir -p "$T/fakebin" "$D"
+for u in OLD NEW BOOTED SRC; do mkdir -p "$D/$u"; done
+python3 -c 'import os, sys, time
+t = time.time() - 3 * 3600
+for u in ("OLD", "BOOTED", "SRC"): os.utime(os.path.join(sys.argv[1], u), (t, t))' "$D"
+cat > "$T/fakebin/xcrun" <<FAKE
+#!/usr/bin/env bash
+if [[ "\$*" == "simctl --set testing list devices -j" ]]; then
+  echo '{"devices":{"iOS-26-5":[{"udid":"OLD","name":"Clone 2 of iPhone 17","state":"Shutdown"},{"udid":"NEW","name":"Clone 2 of iPhone 17","state":"Shutdown"},{"udid":"BOOTED","name":"Clone 1 of iPhone 17","state":"Booted"},{"udid":"SRC","name":"iPhone 17","state":"Shutdown"}]}}'
+elif [[ "\$1 \$2 \$3 \$4" == "simctl --set testing delete" ]]; then
+  echo "\$5" >> "$T/deleted.log"
+fi
+FAKE
+chmod +x "$T/fakebin/xcrun"
+out=$(printf '{"cwd":"%s"}' "$T" | HOME="$H" PATH="$T/fakebin:$PATH" "$K/bin/session-start.sh")
+if [[ -z "$out" && "$(cat "$T/deleted.log" 2>/dev/null)" == "OLD" ]]; then ok "session-start deletes only old, shut-down test clones, silently"
+else bad "session-start clone clean-up: output '$out', deleted '$(cat "$T/deleted.log" 2>/dev/null | tr '\n' ' ')'"; fi
+
 # install-hooks: one entry, idempotent, nothing else touched.
 printf '{"permissions":{"allow":["Read(x)"]}}\n' > "$T/settings.json"
 CLAUDE_SETTINGS_FILE="$T/settings.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null

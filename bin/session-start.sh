@@ -74,6 +74,38 @@ check_toolkit() {
   echo "TOOLKIT BEHIND: $k is $behind commit(s) behind origin/main, so PROCESS.md, the scripts and the agents may be out of date. Bring it up to date with a fast-forward, which changes nothing else: git -C $k pull --ff-only"
 }
 
+# clean_test_clones: deletes simulator copies that xcodebuild's parallel
+# testing left in ~/Library/Developer/XCTestDevices (one per run, until
+# bin/test.sh turned parallel testing off for local runs), shut down and more
+# than two hours old, so a copy another session's run has just made is never
+# touched. The simulator service erases them in the background. Silent, and
+# given 20 s at most.
+clean_test_clones() {
+  command -v xcrun >/dev/null 2>&1 || return 0
+  local devices="$HOME/Library/Developer/XCTestDevices"
+  [ -d "$devices" ] || return 0
+  (
+    xcrun simctl --set testing list devices -j 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for runtime, devs in data.get("devices", {}).items():
+    for d in devs:
+        if d.get("state") == "Shutdown" and d.get("name", "").startswith("Clone "):
+            print(d["udid"])' 2>/dev/null | while read -r udid; do
+      [ -n "$(find "$devices/$udid" -maxdepth 0 -mmin +120 2>/dev/null)" ] || continue
+      xcrun simctl --set testing delete "$udid" >/dev/null 2>&1
+    done
+  ) >/dev/null 2>&1 &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 20 ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null; fi
+  wait "$pid" 2>/dev/null || true
+}
+
 check_checkout "$CWD"
 check_toolkit
+clean_test_clones
 exit 0

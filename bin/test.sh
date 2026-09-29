@@ -17,6 +17,16 @@
 #   4. `-only-testing:` with a Swift Testing function name can match nothing
 #      and still print TEST SUCCEEDED. A run of 0 tests is reported as a
 #      failure here for that reason.
+#   5. A local run tests on the one simulator: no parallel clones, and no
+#      diagnostics archive on a failure. With the scheme's "execute in
+#      parallel", xcodebuild copies the simulator into
+#      ~/Library/Developer/XCTestDevices for each run and left one copy
+#      behind every time ("Clone 2 of iPhone 17": 55 of them by 2026-09-29).
+#      Those copies, and the diagnostics a failing test attaches, helped fill
+#      the disk until test runs failed to install the app. Swift Testing still
+#      runs tests in parallel inside the one simulator. CI (where CI is set)
+#      keeps both: its machine is thrown away, and a failed run's
+#      diagnostics are worth uploading.
 #
 # Usage: test.sh <repo root> [--unit-only | --ui-only]
 #   TEST_OUTPUT_DIR=<dir>        keep the log and result bundle under <dir> (CI uploads them)
@@ -50,6 +60,10 @@ fi
 # Extra xcodebuild arguments for one run, on top of app.json's, e.g. CI's UI
 # job passes "-parallel-testing-enabled NO" so the runner boots one simulator.
 EXTRA=()
+LOCAL=()
+if [[ -z "${CI:-}" ]]; then
+  LOCAL=(-parallel-testing-enabled NO -collect-test-diagnostics never)
+fi
 if [[ -n "${TEST_XCODEBUILD_ARGS:-}" ]]; then
   read -r -a EXTRA <<<"$TEST_XCODEBUILD_ARGS"
 fi
@@ -86,6 +100,7 @@ xcodebuild test \
   -destination "id=$SIM" \
   -resultBundlePath "$BUNDLE" \
   ${ONLY[@]+"${ONLY[@]}"} \
+  ${LOCAL[@]+"${LOCAL[@]}"} \
   ${APP_XCODEBUILD_EXTRA[@]+"${APP_XCODEBUILD_EXTRA[@]}"} \
   ${EXTRA[@]+"${EXTRA[@]}"} \
   > "$LOG" 2> "$ERRLOG"
