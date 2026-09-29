@@ -107,6 +107,16 @@ xcodebuild test \
 XC_EXIT=$?
 set -e
 
+# Each install leaves the app it replaced in the simulator's Dead folder
+# (com.apple.containermanagerd), 30 MB or so a run, and nothing empties it
+# while the simulator stays booted: 110 copies filled a 228 GB disk to zero
+# on 2026-09-29. Local runs clear the ones over a minute old; this run's own
+# install is done by now.
+if [[ -z "${CI:-}" ]]; then
+  DEAD="$HOME/Library/Developer/CoreSimulator/Devices/$SIM/data/Library/Caches/com.apple.containermanagerd/Dead"
+  find "$DEAD" -mindepth 1 -maxdepth 1 -name 'temp.*' -mmin +1 -exec rm -rf {} + 2>/dev/null || true
+fi
+
 # Authoritative counts, from the result bundle.
 read -r B_PASSED B_FAILED B_SKIPPED B_TOTAL B_RESULT <<<"$(
   xcrun xcresulttool get test-results summary --path "$BUNDLE" 2>/dev/null \

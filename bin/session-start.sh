@@ -105,7 +105,29 @@ for runtime, devs in data.get("devices", {}).items():
   wait "$pid" 2>/dev/null || true
 }
 
+# clean_dead_bundles: empties the simulators' Dead folders of what is more
+# than two hours old. Every test install moves the app it replaces there
+# (com.apple.containermanagerd), 30 MB or so, and nothing reaps it while a
+# simulator stays booted: 110 copies filled the disk on 2026-09-29. bin/test.sh
+# clears its own simulator after each run; this catches runs made any other
+# way. Silent, and given 20 s at most.
+clean_dead_bundles() {
+  local devices="$HOME/Library/Developer/CoreSimulator/Devices"
+  [ -d "$devices" ] || return 0
+  (
+    for dead in "$devices"/*/data/Library/Caches/com.apple.containermanagerd/Dead; do
+      [ -d "$dead" ] || continue
+      find "$dead" -mindepth 1 -maxdepth 1 -name 'temp.*' -mmin +120 -exec rm -rf {} +
+    done
+  ) >/dev/null 2>&1 &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 20 ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null; fi
+  wait "$pid" 2>/dev/null || true
+}
+
 check_checkout "$CWD"
 check_toolkit
 clean_test_clones
+clean_dead_bundles
 exit 0
