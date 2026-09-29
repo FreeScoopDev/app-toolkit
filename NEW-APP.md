@@ -1,6 +1,6 @@
 # Starting a new app
 
-From "we're making an app" to the first merged PR. About an hour,
+From "we're making an app" to the first PR that merges itself. About an hour,
 most of it in parts 1 and 3, which only Joe can do (they need his Apple and
 GitHub sign-ins). Claude does parts 2 and 4.
 

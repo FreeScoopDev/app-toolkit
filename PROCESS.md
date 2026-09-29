@@ -3,13 +3,13 @@
 This is the process for every app. Each app's `CLAUDE.md` imports this file
 (`@~/.claude/toolkit/PROCESS.md`) and adds only what is specific to that app:
 its required check names, its release details, its traps. Change the process
-here, once, and every app follows. Agreed with Joe 2026-09-23; `changelog.d/`
-since 2026-09-27; Joe merges every PR again since 2026-09-28.
+here, once, and every app follows. Agreed with Joe 2026-09-23; auto-merge and
+`changelog.d/` since 2026-09-27.
 
 **Joe decides what ships. Claude does the git work and the bookkeeping. Checks
-run by themselves. Joe clicks Merge.**
+run by themselves, and a change that passes them merges itself.**
 
-## Every change: Joe's one step is Merge
+## Every change: no Joe step
 
 `main` is protected by a "Protect main" ruleset: pull requests only, squash
 merge only, no force-push, no deletion, and the required checks listed in the
@@ -29,35 +29,41 @@ Claude, in its own worktree:
    `scripts/test.sh`.
 3. Merges `origin/main` in, pushes the branch and opens the PR. The
    description says how each claim is known (see "Verifying claims").
-4. About 2 minutes later, confirms every check named in the app's
+4. Queues the merge: `gh pr merge <N> --auto --squash`. Gives Joe the link.
+   If Claude Code's auto-mode safety check refuses it, Claude does not retry
+   or look for a way around it: it tells Joe, and he clicks **Squash and
+   merge** once every required check is green. (The check queued #93–#106
+   on Wockett, then refused #107 and #108 on 2026-09-28; why is not known.)
+5. About 2 minutes later, confirms every check named in the app's
    `requiredChecks` (`.claude/app.json`) has appeared on the PR
    (`gh pr checks <N>`). A check that never appears means its provider never
    got the event: re-fire with `gh pr close <N> && gh pr reopen <N>`, which
    re-sends the pull-request event to GitHub Actions and Xcode Cloud alike.
-5. Fixes anything that blocks the merge: a red check, or a conflict (merge
-   `origin/main` in, run `scripts/test.sh`, push).
-6. Gives Joe the PR link. Joe clicks **Squash and merge** once every required
-   check is green. Claude never merges and never queues auto-merge.
+   Then check the merge is still queued
+   (`gh pr view <N> --json autoMergeRequest`) and queue it again if not.
+6. Fixes anything that blocks the merge: a red check, or a conflict (merge
+   `origin/main` in, run `scripts/test.sh`, push). GitHub squash-merges once
+   every required check is green, and deletes the branch.
 7. After the merge, removes its worktree and deletes the local branch.
 
-Why Joe merges: from 2026-09-27 this step was Claude queuing GitHub
-auto-merge (`gh pr merge --auto`), but Claude Code's auto-mode safety check
-refuses that as "merging without review", and a permission rule allowing
-`gh pr merge` does not override it. It never succeeded once: every PR from
-Wockett #88 to #108 was merged by Joe's click. A step that is always blocked
-stalls each session at the same place, so the click came back (2026-09-28).
-The repo's "Allow auto-merge" setting can stay on; nothing uses it.
+**Hold.** If Joe says "hold #N", Claude runs `gh pr merge <N> --disable-auto`,
+and that PR waits for Joe's own **Squash and merge**.
+
+Why auto-merge: by the time Joe clicked Merge, the required checks had already
+passed, and he was not reviewing code, so the click added only waiting. `main`
+is not what users get; the gate that matters is the release, which stays Joe's.
 
 Why `changelog.d/`: every open PR used to add its entry at the same line of
 `CHANGELOG.md`, so the second to land always conflicted (Wockett #90, #91,
-#92 in one afternoon), and a conflicted PR cannot merge until it is fixed.
+#92 in one afternoon), and a conflicted PR cannot auto-merge.
 
 ## Shipping a version: Joe's steps
 
 Claude opens the **release PR**: it moves every `changelog.d/` entry into
 `CHANGELOG.md` under the new version's headings, deletes those files (the
 README stays), bumps `MARKETING_VERSION`, and runs the `release-checker`
-agent. **Merging the release PR is Joe's decision to ship.** Its description starts with a **Ship Card**:
+agent. **The release PR is never auto-merged. Merging it is Joe's decision to
+ship.** Its description starts with a **Ship Card**:
 
 - **What's New**: App Store copy covering everything users have not seen since
   the version that is *live* (check `https://itunes.apple.com/lookup?id=<Apple
@@ -96,9 +102,9 @@ down. It builds whatever is on disk in Joe's folder.
 
 ## Git rules
 
-- Claude commits, pushes branches and pushes release tags. It never pushes
-  to `main`, never force-pushes, never merges a PR and never queues
-  auto-merge. Joe merges.
+- Claude commits, pushes branches, queues auto-merge and pushes release tags.
+  It never pushes to `main`, never force-pushes, never merges past a failing
+  or missing check, and never auto-merges the release PR.
 - **Joe's folder** (`~/Desktop/Apps/<App>`) is his. Git there is read-only,
   with `--no-optional-locks`: no `switch`, `checkout`, `merge`, `pull` or
   `commit`. If it needs updating before an emergency archive, give Joe the
