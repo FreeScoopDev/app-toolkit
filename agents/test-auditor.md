@@ -44,7 +44,13 @@ You answer by experiment, not by reading. Reading a test tells you what it
        xcodebuild test -project <project> -scheme <scheme> \
          -destination "id=$(bash ~/.claude/toolkit/bin/ci_pick_simulator.sh)" \
          -only-testing:<UnitTarget>/<Suite> -resultBundlePath "$WORK/r1.xcresult" \
+         -parallel-testing-enabled NO -collect-test-diagnostics never \
          <extra args from app.json> > "$WORK/r1.log" 2>&1; echo "exit=$?"
+
+   `-parallel-testing-enabled NO` keeps xcodebuild from copying the
+   simulator for each run: it left one copy behind every time, and they
+   filled the disk. Don't create simulators of your own; if you must, delete
+   them (`xcrun simctl delete <udid>`) before you report.
 
    Judge by the exit code and the bundle
    (`xcrun xcresulttool get test-results summary --path "$WORK/r1.xcresult"`),
