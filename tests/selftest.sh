@@ -80,6 +80,20 @@ refuses "new-app refuses a project with no tests" "$T/Nope" "$K/bin/new-app.sh" 
 mkdir -p "$T/cfg/.claude"
 echo '{}' > "$T/cfg/.claude/app.json"
 refuses "repo-check refuses a config with no github/requiredChecks" "$T/cfg" "$K/bin/repo-check.sh" "$T/cfg"
+# repo-check's security standard, on GitHub's repo JSON as it comes back.
+if out=$(python3 - "$K/lib" <<'PY' 2>&1
+import sys; sys.path.insert(0, sys.argv[1])
+from repo_settings import security_patch
+on = {"status": "enabled"}; off = {"status": "disabled"}
+p, b = security_patch({"visibility": "public", "security_and_analysis": {"secret_scanning": on, "secret_scanning_push_protection": on}})
+assert (p, b) == ([], {}), (p, b)
+p, b = security_patch({"visibility": "public", "security_and_analysis": {"secret_scanning": on, "secret_scanning_push_protection": off}})
+assert len(p) == 1 and "push_protection" in p[0] and b == {"security_and_analysis": {"secret_scanning_push_protection": on}}, (p, b)
+p, b = security_patch({"visibility": "public"})  # field missing: GitHub omits it without admin access
+assert len(p) == 2 and set(b["security_and_analysis"]) == {"secret_scanning", "secret_scanning_push_protection"}, (p, b)
+assert security_patch({"visibility": "private"}) == ([], {})
+PY
+); then ok "repo-check wants secret scanning and push protection on public repos only"; else bad "repo-check security standard: $out"; fi
 refuses "app_config refuses missing required keys" "$T/cfg" python3 "$K/lib/app_config.py" "$T/cfg"
 python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" <<'PY'
 import json, sys
