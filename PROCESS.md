@@ -114,7 +114,10 @@ ship.** Its description starts with a **Ship Card**:
   the version that is *live* (check `https://itunes.apple.com/lookup?id=<Apple
   ID>`), not just since the last cut.
 - **What to Test**: TestFlight copy.
-- **QA cards**: the Testing/QA cards from the Notion Releases page.
+- **QA cards**: the Testing/QA cards from the Notion Releases page. The
+  regression card includes the release-checker's **For the regression QA
+  card** steps (Dynamic Type at the largest sizes, contrast in light and dark
+  mode), which can only be checked on a device.
 - **Console steps**: anything only Joe can do (a CloudKit schema deploy, an
   App Store Connect product), written as exact clicks. Omitted when none.
 - **Release check**: the `release-checker` report.
