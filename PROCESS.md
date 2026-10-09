@@ -24,27 +24,66 @@ Claude, in its own worktree:
    `docs/` or `test/`. **Never stack a PR on another branch.** The test
    workflows (GitHub Actions `tests.yml`, Xcode Cloud `CI Tests`) only run
    PRs whose base is `main`, so a stacked PR gets no check until retargeted.
-2. Makes the change, adds its **changelog entry as a new file in
+2. **On a major change, writes the spec before any code** (see "Major changes"
+   below): what the change is for, numbered acceptance criteria, and every
+   "must not" stated explicitly. It goes in the private specs repo,
+   `~/Desktop/Apps/specs/<App>/<branch-name>.md` (`<App>` is `app` in
+   `.claude/app.json`), committed and pushed straight to its `main`: no PR,
+   no CI. The repo's `README.md` has the shape.
+3. Makes the change, adds its **changelog entry as a new file in
    `changelog.d/`** (format in that folder's README), and runs
    `scripts/test.sh`.
-3. Merges `origin/main` in, pushes the branch and opens the PR. The
+4. Merges `origin/main` in, pushes the branch and opens the PR. The
    description says how each claim is known (see "Verifying claims").
-4. Queues the merge: `gh pr merge <N> --auto --squash`. Gives Joe the link.
+5. **On a major change, runs the critic.** Spawns the `critic` agent with the
+   repo path, the diff range (`origin/main...HEAD`) and the spec file; fixes
+   every BLOCK finding, pushes, and runs it again until the verdict is not
+   BLOCK. Records the final verdict in the PR description's `**Critic
+   verdict:**` line, and the spec's path (the path only: the specs repo is
+   private, so never a link) on the `**Spec:**` line. Appends each run's
+   findings to the spec file under `## Critic` and pushes it. If the PR adds
+   or changes tests, also runs `test-auditor` on them and fixes what it finds.
+6. Queues the merge: `gh pr merge <N> --auto --squash`. Gives Joe the link.
    If Claude Code's auto-mode safety check refuses it, Claude does not retry
    or look for a way around it: it tells Joe, and he clicks **Squash and
    merge** once every required check is green. (The check queued #93–#106
    on Wockett, then refused #107 and #108 on 2026-09-28; why is not known.)
-5. About 2 minutes later, confirms every check named in the app's
+7. About 2 minutes later, confirms every check named in the app's
    `requiredChecks` (`.claude/app.json`) has appeared on the PR
    (`gh pr checks <N>`). A check that never appears means its provider never
    got the event: re-fire with `gh pr close <N> && gh pr reopen <N>`, which
    re-sends the pull-request event to GitHub Actions and Xcode Cloud alike.
    Then check the merge is still queued
    (`gh pr view <N> --json autoMergeRequest`) and queue it again if not.
-6. Fixes anything that blocks the merge: a red check, or a conflict (merge
+8. Fixes anything that blocks the merge: a red check, or a conflict (merge
    `origin/main` in, run `scripts/test.sh`, push). GitHub squash-merges once
    every required check is green, and deletes the branch.
-7. After the merge, removes its worktree and deletes the local branch.
+9. After the merge, removes its worktree and deletes the local branch.
+
+### Major changes
+
+A change is **major** when its branch starts with `feat/`, or it changes more
+than `criticMinLines` lines of Swift (added plus deleted, from `.claude/app.json`;
+the template starts at 40) outside the test targets (`unitTestTarget`,
+`uiTestTarget`). The number is a starting point, not a measured threshold:
+change it in the app's `app.json`, and the process and the check follow.
+
+The **Critic verdict** check (`.github/workflows/critic-verdict.yml`, logic in
+`scripts/critic_verdict.py`) applies the same definition to every PR and fails
+a major one whose description has no verdict line, or whose verdict is BLOCK.
+Editing the description re-runs it. It proves a verdict was recorded, not that
+the review was good. An app with no remote has no PR and no check: the spec
+file's `## Critic` section is the record.
+
+**Findings become standing checks.** When the critic finds the same class of
+problem twice in an app, Claude adds that class to the app's `reviewFocus` in
+`.claude/app.json`, which the critic checks on every run, and says so in the
+PR.
+
+Why: routine PRs merge themselves and nobody reads the code, so the critic is
+the only reviewer. Before 2026-10-09 it ran when a session chose to, and plans
+lived only in the chat that made them, so the critic's first finding was
+often that there was no spec to check against.
 
 **Hold.** If Joe says "hold #N", Claude runs `gh pr merge <N> --disable-auto`,
 and that PR waits for Joe's own **Squash and merge**.

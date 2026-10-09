@@ -9,6 +9,7 @@
   "versionSource": "project.pbxproj",
   "github": "__REPO__",
   "requiredChecks": ["SwiftLint"],
+  "criticMinLines": 40,
   "reviewFocus": [],
   "notes": "requiredChecks starts with SwiftLint only. Add \"__APP__ | CI Tests | Test - iOS\" once Xcode Cloud has posted it on a PR, then run repo-check.sh --apply. A required check that has never posted blocks every PR."
 }

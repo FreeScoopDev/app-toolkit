@@ -45,13 +45,16 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
   "versionSource": "project.pbxproj",
   "github": "FreeScoopDev/PlowR",
   "requiredChecks": ["PlowR | CI Tests | Test - iOS", "Service-language guard", "SwiftLint"],
+  "criticMinLines": 40,
   "reviewFocus": ["what the critic should check every time for this app"],
   "notes": "free text"
 }
 ```
 
 Required: `app`, `project`, `scheme`, `unitTestTarget`, `lintExcluded`.
-`repo-check.sh` also needs `github` and `requiredChecks`.
+`repo-check.sh` also needs `github` and `requiredChecks`. `criticMinLines`
+defines a major change (PROCESS.md, "Major changes") for the process and for
+the repo's "Critic verdict" check, which refuses to run without it.
 The repos are public, so nothing private goes in this file.
 
 ## Each repo's wrappers
@@ -61,6 +64,11 @@ repo only forward to `bin/` here, passing the repo root. CI never calls them
 (Xcode Cloud runs the scheme; GitHub Actions runs SwiftLint directly), so a
 clone without this toolkit still builds and passes CI. The wrappers just say
 where the toolkit is expected if it's missing.
+
+`scripts/critic_verdict.py` is the exception: it is CI's own, run by
+`.github/workflows/critic-verdict.yml`, so it carries its logic rather than
+forwarding here. The self-test runs the template copy; a change to it reaches
+an existing app only by copying it into that repo.
 
 ## Agents
 
