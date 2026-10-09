@@ -213,9 +213,73 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 cmds = [h["command"] for e in d["hooks"]["SessionStart"] for h in e["hooks"]]
 assert cmds == [sys.argv[2] + "/bin/session-start.sh"], cmds
+post = d["hooks"]["PostToolUse"]
+assert [(e["matcher"], [h["command"] for h in e["hooks"]]) for e in post] == \
+    [("Edit|Write", [sys.argv[2] + "/bin/lint-hook.sh"])], post
 assert d["permissions"] == {"allow": ["Read(x)"]}, d
 PY
-then ok "install-hooks adds one SessionStart hook and keeps the rest"; else bad "install-hooks: wrong result in $T/settings.json"; fi
+then ok "install-hooks adds one SessionStart and one PostToolUse hook and keeps the rest"; else bad "install-hooks: wrong result in $T/settings.json"; fi
+# A settings file from before the lint hook (SessionStart only) gains the lint hook, once.
+printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"%s/bin/session-start.sh","timeout":30}]}]}}\n' "$K" > "$T/settings-old.json"
+CLAUDE_SETTINGS_FILE="$T/settings-old.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null
+CLAUDE_SETTINGS_FILE="$T/settings-old.json" TOOLKIT_HOME="$K" "$K/bin/install-hooks.sh" >/dev/null
+if python3 - "$T/settings-old.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))["hooks"]
+assert len(d["SessionStart"]) == 1 and len(d["PostToolUse"]) == 1, d
+PY
+then ok "install-hooks upgrades a SessionStart-only file without duplicating"; else bad "install-hooks upgrade: $(cat "$T/settings-old.json")"; fi
+
+# lint-hook: a fake swiftlint records where and how it was called, so this
+# runs on Linux. The hook must lint only .swift files in a repo with a
+# .swiftlint.yml, from the repo root, with --force-exclude and never --fix,
+# hand violations over as additionalContext, and exit 0 on every path.
+mkdir -p "$T/fakebin" "$T/nolint"
+cat > "$T/fakebin/swiftlint" <<'SH'
+#!/usr/bin/env bash
+printf '%s|%s\n' "$PWD" "$*" >> "$FAKE_SWIFTLINT_LOG"
+[[ -n "${FAKE_SWIFTLINT_CRASH:-}" ]] && { echo "Fatal error: boom" >&2; exit 3; }
+[[ -n "${FAKE_SWIFTLINT_CLEAN:-}" ]] && exit 0
+echo "${@: -1}:3:9: error: Force Unwrapping Violation: Force unwrapping should be avoided (force_unwrapping)"
+exit 2
+SH
+chmod +x "$T/fakebin/swiftlint"
+mkdir -p "$T/Kiln/Kiln" && echo 'let a = b!' > "$T/Kiln/Kiln/Lint.swift" && echo 'x' > "$T/Kiln/notes.md"
+git init -q "$T/nolint" && echo 'let a = b!' > "$T/nolint/A.swift" && mkdir -p "$T/outside" && echo 'let a = b!' > "$T/outside/A.swift"
+export FAKE_SWIFTLINT_LOG="$T/swiftlint.log"
+lh() { # lh <file> [env...]: runs the hook from $T with an Edit event for <file>; sets LH_OUT, LH_CODE
+  local f=$1; shift; LH_CODE=0; : > "$FAKE_SWIFTLINT_LOG"
+  LH_OUT=$(cd "$T" && printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"},"cwd":"%s"}' "$f" "$T" \
+    | env PATH="$T/fakebin:$PATH" "$@" "$K/bin/lint-hook.sh" 2>&1) || LH_CODE=$?
+}
+lh "$T/Kiln/Kiln/Lint.swift"
+if [[ $LH_CODE -eq 0 ]] && python3 - "$LH_OUT" <<'PY'
+import json, sys
+o = json.loads(sys.argv[1])["hookSpecificOutput"]
+assert o["hookEventName"] == "PostToolUse", o
+assert "Kiln/Lint.swift:3:9: error: Force Unwrapping Violation" in o["additionalContext"], o
+assert "decision" not in json.loads(sys.argv[1])
+PY
+then ok "lint-hook hands a violation to Claude as context"; else bad "lint-hook on a violation (exit $LH_CODE): $LH_OUT"; fi
+CALL=$(cat "$FAKE_SWIFTLINT_LOG")
+if [[ "$CALL" == "$(cd "$T/Kiln" && pwd -P)|lint --quiet --force-exclude -- Kiln/Lint.swift" || "$CALL" == "$T/Kiln|lint --quiet --force-exclude -- Kiln/Lint.swift" ]]; then
+  ok "lint-hook runs from the repo root, on the one file, with --force-exclude"
+else bad "lint-hook called swiftlint as: $CALL"; fi
+grep -q -- '--fix' "$FAKE_SWIFTLINT_LOG" && bad "lint-hook passed --fix" || true
+quiet_hook() { # quiet_hook <label> <file> [env...]: exit 0, no output
+  local label=$1; shift; lh "$@"
+  if [[ $LH_CODE -eq 0 && -z "$LH_OUT" ]]; then ok "lint-hook: $label"; else bad "lint-hook: $label (exit $LH_CODE): $LH_OUT"; fi
+}
+quiet_hook "silent for a file that is not Swift" "$T/Kiln/notes.md"
+[[ -s "$FAKE_SWIFTLINT_LOG" ]] && bad "lint-hook ran swiftlint on a non-Swift file"
+quiet_hook "silent in a repo with no .swiftlint.yml" "$T/nolint/A.swift"
+quiet_hook "silent outside a repo" "$T/outside/A.swift"
+quiet_hook "silent for a clean file" "$T/Kiln/Kiln/Lint.swift" FAKE_SWIFTLINT_CLEAN=1
+quiet_hook "exit 0 when swiftlint crashes" "$T/Kiln/Kiln/Lint.swift" FAKE_SWIFTLINT_CRASH=1
+mkdir -p "$T/emptybin"; LH_CODE=0
+LH_OUT=$(printf '{"tool_input":{"file_path":"%s"}}' "$T/Kiln/Kiln/Lint.swift" | env PATH="$T/emptybin:/usr/bin:/bin" "$K/bin/lint-hook.sh" 2>&1) || LH_CODE=$?
+[[ $LH_CODE -eq 0 && -z "$LH_OUT" ]] && ok "lint-hook: exit 0 when swiftlint is not installed" || bad "lint-hook without swiftlint (exit $LH_CODE): $LH_OUT"
+if printf 'not json' | "$K/bin/lint-hook.sh" >/dev/null 2>&1; then ok "lint-hook exits 0 on bad input"; else bad "lint-hook failed on bad input"; fi
 
 # release-build-check: match, a build past the release, a build behind it, one off the line.
 git init -q -b main "$T/rel-origin" 2>/dev/null || { git init -q "$T/rel-origin"; git -C "$T/rel-origin" checkout -q -b main; }

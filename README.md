@@ -25,7 +25,8 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | `bin/cloudkit-schema-check.sh <repo> [schema.ckdb]` | Lists the fields each CloudKit record type needs for the repo's SwiftData models, with CloudKit Console's count; given a schema exported from the Console, names each missing record type, field or wrong type. Exit 1 when something is missing, 2 when it meets Swift it can't read |
 | `bin/release-build-check.sh <repo> <commit>` | Says whether a Release Flow build's commit is the release PR's merge commit; lists the unlisted commits when it is not |
 | `bin/session-start.sh` | Claude Code SessionStart hook: says when the session's checkout is behind `origin/main` and prints the current `CLAUDE.md`; says when this toolkit checkout is behind. Silent when everything is current |
-| `bin/install-hooks.sh` | Registers that hook in `~/.claude/settings.json`, once; run after cloning the toolkit |
+| `bin/lint-hook.sh` | Claude Code PostToolUse hook: after Claude edits or writes a `.swift` file, runs SwiftLint on that file from its repo root with the repo's config and hands the violations to Claude. Report only, never `--fix`; silent otherwise |
+| `bin/install-hooks.sh` | Registers both hooks in `~/.claude/settings.json`, once each; run after cloning the toolkit, and again after a pull that adds a hook |
 | `lib/app_config.py <repo>` | Reads `<repo>/.claude/app.json`, prints shell assignments; rejects unknown keys |
 | `templates/app/` | The standard files a new app starts with; `__APP__`-style placeholders |
 | `agents/` | Joe's subagents; `~/.claude/agents/*.md` are symlinks to these |
@@ -98,6 +99,22 @@ Install it once: `bin/install-hooks.sh` adds the hook to
 `~/.claude/settings.json` (idempotent, touches nothing else). The self-test
 proves the hook by building a repo that is behind its origin and checking the
 banner and the printed file, and proves the installer by running it twice.
+
+## The lint hook
+
+A lint error used to show up only when the PR's SwiftLint check went red,
+which cost a push and a wait. `bin/lint-hook.sh` runs after every Edit or
+Write. For a `.swift` file in a repo that has a `.swiftlint.yml`, it lints that
+one file the way `bin/lint.sh` does: from the repo root, with the in-place
+config, and with `--force-exclude`, because SwiftLint lints a file named on the
+command line even when the config excludes it (checked 2026-10-09 with a force
+unwrap in `PlowRTests`). Violations reach Claude as `additionalContext` next to
+the tool result. It never blocks: no block decision, no exit 2, exit 0 on every
+path. It never runs `--fix`, which has broken builds. The CI check is still the
+judge, because local and CI SwiftLint have disagreed before.
+
+The self-test proves it with a fake `swiftlint` that records where and how it
+was called, so it runs on Linux.
 
 ## Changing anything here
 
