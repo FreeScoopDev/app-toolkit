@@ -581,6 +581,53 @@ if [[ $code -eq 0 ]] && grep -q '^OK: ck-app2.ckdb has every field the models ne
   ok "cloudkit-schema-check reads encrypted fields and REFERENCE relationships, and only notes an assumed type"
 else bad "cloudkit-schema-check export forms (exit $code): $out"; fi
 
+# test.sh's simulator lock: two local runs of one app must not overlap, and a
+# lock left by a dead run is taken over. Fake xcrun and xcodebuild: the fake
+# build logs its start and end and takes 2 s, so overlapping runs show.
+TB="$T/testbin"; mkdir -p "$TB" "$T/locks"
+cat > "$TB/xcrun" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  "simctl list devices available --json") echo '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-5":[{"udid":"SIM1","name":"iPhone 17","isAvailable":true}]}}' ;;
+  *xcresulttool*) echo '{"passedTests":1,"failedTests":0,"skippedTests":0,"totalTestCount":1,"result":"Passed"}' ;;
+esac
+FAKE
+cat > "$TB/xcodebuild" <<'FAKE'
+#!/usr/bin/env bash
+echo "start $(date +%s.%N) $PPID" >> "$FAKE_XCB_LOG"; sleep 2; echo "end $(date +%s.%N) $PPID" >> "$FAKE_XCB_LOG"
+echo "Test case 'T.t()' passed on 'iPhone' (0.001 seconds)"; echo "** TEST SUCCEEDED **"
+FAKE
+chmod +x "$TB/xcrun" "$TB/xcodebuild"
+export FAKE_XCB_LOG="$T/xcb.log"; : > "$FAKE_XCB_LOG"
+trun() { env -u CI PATH="$TB:$PATH" TEST_LOCK_DIR="$T/locks" TEST_OUTPUT_DIR="$T/testout" "$K/bin/test.sh" "$T/Kiln" "$@"; }
+trun > "$T/run1.out" 2>&1 & P1=$!
+sleep 0.5
+trun > "$T/run2.out" 2>&1 & P2=$!
+c1=0; c2=0; wait $P1 || c1=$?; wait $P2 || c2=$?
+if [[ $c1 -eq 0 && $c2 -eq 0 ]] && python3 - "$FAKE_XCB_LOG" <<'PY'
+import sys
+ev = [l.split() for l in open(sys.argv[1])]
+assert len(ev) == 4, ev
+spans = {}
+for kind, t, pid in ev:
+    spans.setdefault(pid, {})[kind] = float(t)
+(a, b) = sorted(spans.values(), key=lambda s: s["start"])
+assert b["start"] >= a["end"], f"runs overlapped: {spans}"
+PY
+then ok "test.sh: a second local run waits for the first (no overlap)"; else bad "test.sh lock (exits $c1 $c2): $(cat "$FAKE_XCB_LOG" "$T/run2.out")"; fi
+grep -q '^Waiting: another Kiln test run has this simulator' "$T/run2.out" && ok "test.sh says why it is waiting" || bad "test.sh did not say it was waiting: $(cat "$T/run2.out")"
+[[ -z "$(ls -A "$T/locks")" ]] && ok "test.sh releases its lock" || bad "test.sh left a lock: $(ls "$T/locks")"
+mkdir "$T/locks/app-toolkit-test-kiln-SIM1.lock"; ( exit 0 ) & DEAD=$!; wait $DEAD; echo $DEAD > "$T/locks/app-toolkit-test-kiln-SIM1.lock/pid"
+# Bounded: a run that never takes the lock over would wait forever.
+trun > "$T/stale.out" 2>&1 & P3=$!; n=0
+while kill -0 $P3 2>/dev/null && [[ $n -lt 30 ]]; do sleep 1; n=$((n + 1)); done
+if kill -0 $P3 2>/dev/null; then pkill -P $P3 2>/dev/null; kill $P3 2>/dev/null; wait $P3 2>/dev/null || true; rm -rf -- "${T:?}/locks/app-toolkit-test-kiln-SIM1.lock"
+  bad "test.sh still waiting on a dead run's lock after 30 s"
+else code=0; wait $P3 || code=$?; out=$(cat "$T/stale.out")
+  [[ $code -eq 0 ]] && grep -q 'Taking over a test lock left by a run that is gone' <<<"$out" && ok "test.sh takes over a dead run's lock" || bad "test.sh with a stale lock (exit $code): $out"; fi
+code=0; out=$(CI=1 PATH="$TB:$PATH" TEST_LOCK_DIR="$T/locks" TEST_OUTPUT_DIR="$T/testout" "$K/bin/test.sh" "$T/Kiln" 2>&1) || code=$?
+[[ $code -eq 0 && -z "$(ls -A "$T/locks")" ]] && ok "test.sh takes no lock on CI" || bad "test.sh on CI (exit $code): $out"
+
 echo
 if [[ $FAILS -gt 0 ]]; then echo "$FAILS check(s) failed"; exit 1; fi
 echo "All checks passed."

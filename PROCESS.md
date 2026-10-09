@@ -16,10 +16,19 @@ merge only, no force-push, no deletion, and the required checks listed in the
 app's `.claude/app.json` (`requiredChecks`). `bin/repo-check.sh <repo>` in
 this toolkit verifies that GitHub still matches this standard.
 
-Claude, in its own worktree:
+Claude, in a worktree of its own for each branch:
 
-1. `git fetch`, then branches from `origin/main`, never a local `main`. A
-   local `main` goes stale, and a branch cut from it silently leaves out
+1. `git fetch`, then creates the branch in a new worktree from `origin/main`,
+   never a local `main`:
+   `git worktree add -b <branch> ~/Desktop/Apps/<App>-claude/<branch, / as -> origin/main`
+   (`<App>` is `app` in `.claude/app.json`; `feat/route-store` lives in
+   `PlowR-claude/feat-route-store`). One worktree per branch is what lets
+   several sessions work on one app at once: two sessions sharing a folder
+   overwrite each other's branch. Run side by side only what won't collide at
+   merge: different apps, or clearly separate areas of one app. Local test
+   runs of one app take turns on the simulator (`bin/test.sh` waits for the
+   other run), because two at once kill each other's test host. A local
+   `main` goes stale, and a branch cut from it silently leaves out
    merged work. One change per branch, prefixed `feat/`, `fix/`, `chore/`,
    `docs/` or `test/`. **Never stack a PR on another branch.** The test
    workflows (GitHub Actions `tests.yml`, Xcode Cloud `CI Tests`) only run
@@ -58,7 +67,8 @@ Claude, in its own worktree:
 8. Fixes anything that blocks the merge: a red check, or a conflict (merge
    `origin/main` in, run `scripts/test.sh`, push). GitHub squash-merges once
    every required check is green, and deletes the branch.
-9. After the merge, removes its worktree and deletes the local branch.
+9. After the merge, removes the branch's worktree (`git worktree remove`) and
+   deletes the local branch.
 
 ### Major changes
 

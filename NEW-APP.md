@@ -36,8 +36,9 @@ deleted after merge, and a "Protect main" ruleset requiring **SwiftLint**.
 Xcode Cloud's check is added in part 4, once it exists: a required check that
 has never reported blocks every PR.
 
-Then Claude creates its worktree beside Joe's folder
-(`git worktree add ~/Desktop/Apps/<App>-claude …`). From here on Joe's
+Then Claude works in one worktree per branch, in a folder beside Joe's
+(`git worktree add -b <branch> ~/Desktop/Apps/<App>-claude/<branch> origin/main`,
+PROCESS.md step 1). From here on Joe's
 folder is his; see `PROCESS.md` → Git rules.
 
 ## Part 3 — Joe: App Store Connect, Slack and Xcode Cloud
