@@ -20,7 +20,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 | `bin/test.sh <repo> [--unit-only \| --ui-only]` | Runs the scheme's tests (or one target: CI runs the two as parallel jobs, `TEST_XCODEBUILD_ARGS` adding arguments for one run); verdict from exit code + `** TEST SUCCEEDED **` + the xcresult bundle; 0 tests = failure. `TEST_OUTPUT_DIR=<dir>` keeps the log and bundle under `<dir>` for CI to upload (Apple's `mktemp -t` ignores `TMPDIR`) |
 | `bin/lint.sh <repo> [--fix]` | SwiftLint from the repo root, with the exclusions proved in effect |
 | `bin/ci_pick_simulator.sh` | Prints the UDID of the newest available iPhone simulator |
-| `bin/repo-check.sh <repo> [--apply]` | Compares the GitHub repo with the standard (public, squash only, auto-merge, "Protect main" requiring `requiredChecks`); `--apply` fixes it, except visibility |
+| `bin/repo-check.sh <repo> [--apply]` | Compares the GitHub repo with the standard (public, squash only, auto-merge, secret scanning and push protection on, "Protect main" requiring `requiredChecks`); `--apply` fixes it, except visibility |
 | `bin/new-app.sh <repo> <owner/name> [--local-only]` | Adds `templates/app` to a fresh Xcode project, commits, creates the public repo, applies the standard |
 | `bin/cloudkit-schema-check.sh <repo> [schema.ckdb]` | Lists the fields each CloudKit record type needs for the repo's SwiftData models, with CloudKit Console's count; given a schema exported from the Console, names each missing record type, field or wrong type. Exit 1 when something is missing, 2 when it meets Swift it can't read |
 | `bin/release-build-check.sh <repo> <commit>` | Says whether a Release Flow build's commit is the release PR's merge commit; lists the unlisted commits when it is not |

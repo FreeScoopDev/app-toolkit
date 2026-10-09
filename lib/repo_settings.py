@@ -8,6 +8,10 @@ The standard (agreed 2026-09-27, the setup Wockett and PlowR share):
   - public repo (a free plan enforces rulesets only on public repos, and
     without a required check auto-merge would merge untested code)
   - squash merge only, auto-merge allowed, branch deleted after merge
+  - on a public repo, secret scanning and push protection enabled (free on
+    public repos; added 2026-10-09). A public repo publishes every commit, so
+    a pushed key is leaked the moment it lands: push protection refuses the
+    push, and scanning flags what is already there.
   - a ruleset on the default branch, active, with no bypass: no deletion,
     no force-push, changes only by pull request (squash, no approvals needed),
     and exactly the required checks listed in .claude/app.json
@@ -32,6 +36,19 @@ REPO_SETTINGS = {
     "allow_merge_commit": False,
     "allow_rebase_merge": False,
 }
+
+SECURITY = ("secret_scanning", "secret_scanning_push_protection")
+
+
+def security_patch(info: dict) -> tuple[list[str], dict]:
+    """Differences from the security standard, and the PATCH body that fixes
+    them. Private repos are exempt: there, these need a paid plan."""
+    if info.get("visibility") != "public":
+        return [], {}
+    have = info.get("security_and_analysis") or {}
+    off = [k for k in SECURITY if (have.get(k) or {}).get("status") != "enabled"]
+    problems = [f"{k} is {(have.get(k) or {}).get('status', 'not reported')}, should be enabled" for k in off]
+    return problems, ({"security_and_analysis": {k: {"status": "enabled"} for k in off}} if off else {})
 
 
 def fail(msg: str) -> None:
@@ -112,6 +129,12 @@ def main() -> None:
     if apply and patch:
         gh("-X", "PATCH", f"repos/{repo}", body=patch)
         fixed += [f"set {k} = {v}" for k, v in patch.items()]
+
+    sec_problems, sec_patch = security_patch(info)
+    problems += sec_problems
+    if apply and sec_patch:
+        gh("-X", "PATCH", f"repos/{repo}", body=sec_patch)
+        fixed += [f"enabled {k}" for k in sec_patch["security_and_analysis"]]
 
     try:
         summaries = gh(f"repos/{repo}/rulesets") or []
