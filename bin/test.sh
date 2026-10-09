@@ -70,6 +70,38 @@ fi
 
 SIM="$(bash "$TOOLKIT/bin/ci_pick_simulator.sh")"
 SLUG="$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")"
+
+# One local run per app per simulator. Two worktrees of one app testing at
+# once install the same app on the same simulator, and each install kills the
+# other run's test host ("Test crashed with signal kill before establishing
+# connection", seen twice on 2026-10-09 with PlowR). So a second run waits for
+# the first. The lock is a directory (mkdir is atomic) holding the owner's PID
+# and worktree; a lock whose PID is gone was left by a killed run and is taken
+# over. CI has one run per machine and skips this.
+if [[ -z "${CI:-}" ]]; then
+  LOCK="${TEST_LOCK_DIR:-${TMPDIR:-/tmp}}/app-toolkit-test-$SLUG-$SIM.lock"
+  WAITED=0
+  until mkdir "$LOCK" 2>/dev/null; do
+    OWNER_PID="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    # No PID a minute on: the owner died between taking the lock and writing it.
+    if [[ -z "$OWNER_PID" && -n "$(find "$LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]] \
+       || { [[ -n "$OWNER_PID" ]] && ! kill -0 "$OWNER_PID" 2>/dev/null; }; then
+      echo "Taking over a test lock left by a run that is gone (pid $OWNER_PID)."
+      rm -rf -- "${LOCK:?}"
+      continue
+    fi
+    if [[ $WAITED -eq 0 ]]; then
+      echo "Waiting: another $APP_NAME test run has this simulator ($(cat "$LOCK/root" 2>/dev/null || echo unknown), pid ${OWNER_PID:-?})."
+      echo "Two runs on one simulator kill each other's test host, so this one starts when that one ends."
+    fi
+    WAITED=$((WAITED + 1))
+    sleep 2
+  done
+  echo $$ > "$LOCK/pid"
+  echo "$ROOT" > "$LOCK/root"
+  trap 'rm -rf -- "${LOCK:?}"' EXIT
+  [[ $WAITED -eq 0 ]] || echo "Lock free after about $((WAITED * 2)) s; starting."
+fi
 # Where the log and the result bundle go. By default a fresh temp location;
 # TEST_OUTPUT_DIR puts them under a directory the caller chooses, which CI
 # needs to upload them after a failure. (Apple's `mktemp -t` ignores TMPDIR,

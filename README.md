@@ -17,7 +17,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
 
 | Path | What |
 | --- | --- |
-| `bin/test.sh <repo> [--unit-only \| --ui-only]` | Runs the scheme's tests (or one target: CI runs the two as parallel jobs, `TEST_XCODEBUILD_ARGS` adding arguments for one run); verdict from exit code + `** TEST SUCCEEDED **` + the xcresult bundle; 0 tests = failure. `TEST_OUTPUT_DIR=<dir>` keeps the log and bundle under `<dir>` for CI to upload (Apple's `mktemp -t` ignores `TMPDIR`) |
+| `bin/test.sh <repo> [--unit-only \| --ui-only]` | Runs the scheme's tests (or one target: CI runs the two as parallel jobs, `TEST_XCODEBUILD_ARGS` adding arguments for one run); verdict from exit code + `** TEST SUCCEEDED **` + the xcresult bundle; 0 tests = failure. `TEST_OUTPUT_DIR=<dir>` keeps the log and bundle under `<dir>` for CI to upload (Apple's `mktemp -t` ignores `TMPDIR`). Locally, one run per app per simulator: a second waits, because two installs of one app kill each other's test host |
 | `bin/lint.sh <repo> [--fix]` | SwiftLint from the repo root, with the exclusions proved in effect |
 | `bin/ci_pick_simulator.sh` | Prints the UDID of the newest available iPhone simulator |
 | `bin/repo-check.sh <repo> [--apply]` | Compares the GitHub repo with the standard (public, squash only, auto-merge, secret scanning and push protection on, "Protect main" requiring `requiredChecks`); `--apply` fixes it, except visibility |

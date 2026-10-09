@@ -19,7 +19,7 @@ What is specific to __APP__:
 | --- | --- |
 | GitHub repo | `__REPO__` |
 | Joe's folder | `~/Desktop/Apps/__APP__` (read-only git for Claude) |
-| Claude's worktree | `~/Desktop/Apps/__APP__-claude` |
+| Claude's worktrees | `~/Desktop/Apps/__APP__-claude/<branch>`, one per branch (PROCESS.md) |
 | Xcode project / scheme | `__PROJECT__.xcodeproj` / `__SCHEME__` |
 | Unit tests | `__UNIT_TESTS__` |
 | Required checks on `main` | listed in `.claude/app.json` → `requiredChecks` |
