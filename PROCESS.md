@@ -98,6 +98,18 @@ Why `changelog.d/`: every open PR used to add its entry at the same line of
 
 ## Shipping a version: Joe's steps
 
+**Before the release PR, crashes and feedback.** Claude runs the
+`crash-triage` agent on every crash file in `~/Desktop/Apps/crashlogs/`
+(`.ips`, `.crash`, `.xccrashpoint`, MetricKit `.json`) for this app that is
+newer than the last release tag's commit (`git log -1 --format=%cI <tag>`),
+passing the files and the repo path. It also asks Joe for anything only he can
+see: new crashes in Xcode Organizer (Window → Organizer → Crashes, this app,
+since the last version) and new TestFlight feedback (App Store Connect →
+the app → TestFlight → Feedback). Each real problem goes back through "Every
+change" before the cut, or onto the Ship Card as a known issue Joe accepts.
+Nothing new is a fine answer, and the Ship Card says so. This replaces the
+weekly QA pass, which ran on a timer with nothing new to read.
+
 Claude opens the **release PR**: it moves every `changelog.d/` entry into
 `CHANGELOG.md` under the new version's headings, deletes those files (the
 README stays), bumps `MARKETING_VERSION`, and runs the `release-checker`
@@ -118,6 +130,9 @@ ship.** Its description starts with a **Ship Card**:
 - **Console steps**: anything only Joe can do (a CloudKit schema deploy, an
   App Store Connect product), written as exact clicks. Omitted when none.
 - **Release check**: the `release-checker` report.
+- **Crashes and feedback**: what `crash-triage` found and what Joe reported
+  from Organizer and TestFlight, with what was done about each, or "nothing
+  new since vX.Y".
 
 Joe then:
 
