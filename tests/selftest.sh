@@ -44,6 +44,10 @@ for f in "$K"/bin/*.sh "$K"/templates/app/scripts/*.sh "$K"/tests/*.sh; do
   bash -n "$f" || bad "bash syntax: $f"
 done
 python3 -m py_compile "$K"/lib/*.py && ok "python compiles"
+# Templates: compiled in memory, since a __pycache__ there would be copied into every new app.
+for f in "$K"/templates/app/scripts/*.py; do
+  python3 -c 'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")' "$f" || bad "python syntax: $f"
+done
 
 # new-app on a well-formed project.
 fake "$T/Kiln" Kiln
@@ -82,6 +86,48 @@ import json, sys
 d = json.load(open(sys.argv[1])); d["requiredCheck"] = ["typo"]; json.dump(d, open(sys.argv[2], "w"))
 PY
 refuses "app_config refuses an unknown key" "$T/cfg" python3 "$K/lib/app_config.py" "$T/cfg"
+for v in '"40"' -1 true; do
+  python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" "$v" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticMinLines"] = json.loads(sys.argv[3]); json.dump(d, open(sys.argv[2], "w"))
+PY
+  refuses "app_config refuses criticMinLines $v" "$T/cfg" python3 "$K/lib/app_config.py" "$T/cfg"
+done
+
+# Critic verdict check (templates/app/scripts/critic_verdict.py), run as CI
+# runs it: from the generated repo's root, against a base and head commit.
+# Kiln's app.json has criticMinLines 40 and unit test target KilnTests.
+CV_BASE=$(git -C "$T/Kiln" rev-parse HEAD)
+cv() { # cv <label> <want exit> <file> <lines> <branch> [body]
+  local label=$1 want=$2 file=$3 n=$4 branch=$5 body=${6:-} code=0 head out
+  git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+  mkdir -p "$T/Kiln/$(dirname "$file")"; seq "$n" | sed 's/^/let x = /' > "$T/Kiln/$file"
+  git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm cv
+  head=$(git -C "$T/Kiln" rev-parse HEAD)
+  out=$(cd "$T/Kiln" && PR_BODY=$body python3 scripts/critic_verdict.py "$CV_BASE" "$head" "$branch" 2>&1) || code=$?
+  if [[ $code -eq $want ]]; then ok "critic verdict: $label"; else bad "critic verdict: $label (exit $code, wanted $want): $out"; fi
+}
+TEMPLATE_BODY=$(cat "$T/Kiln/.github/pull_request_template.md")
+cv "small fix/ change needs no verdict" 0 Kiln/A.swift 40 fix/small
+cv "41 lines of Swift is major" 1 Kiln/A.swift 41 fix/big
+cv "Swift in the test target does not count" 0 KilnTests/ATests.swift 200 test/more
+cv "a feat/ branch is major with one line" 1 Kiln/A.swift 1 feat/x "No verdict here."
+cv "the template's hint text is not a verdict" 1 Kiln/A.swift 1 feat/x "$TEMPLATE_BODY"
+FILLED_BODY=$(sed 's/^\*\*Critic verdict:\*\* /&APPROVE WITH FINDINGS /' <<<"$TEMPLATE_BODY")
+[[ "$FILLED_BODY" != "$TEMPLATE_BODY" ]] || bad "the PR template has no '**Critic verdict:** ' line to fill"
+cv "APPROVE WITH FINDINGS on the template's line passes" 0 Kiln/A.swift 99 feat/x "$FILLED_BODY"
+cv "a verdict inside an HTML comment does not count" 1 Kiln/A.swift 99 feat/x $'<!--\nCritic verdict: APPROVE\n-->'
+cv "BLOCK fails" 1 Kiln/A.swift 99 feat/x "**Critic verdict:** BLOCK"
+cv "a verdict that is not one of the three fails" 1 Kiln/A.swift 99 feat/x "Critic verdict: looks fine"
+cv "the last verdict line counts" 0 Kiln/A.swift 99 feat/x $'Critic verdict: BLOCK\nCritic verdict: **APPROVE**'
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+python3 - "$T/Kiln/.claude/app.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); del d["criticMinLines"]; json.dump(d, open(sys.argv[1], "w"))
+PY
+cv "no criticMinLines in app.json is a config error" 2 Kiln/A.swift 1 fix/x
+git -C "$T/Kiln" checkout -q -- .claude/app.json 2>/dev/null || true
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
 
 # Agents: each file must parse as an agent Claude Code will load, with its
 # name matching the file (a mismatch or missing field loses the agent silently).

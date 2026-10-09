@@ -16,7 +16,7 @@ from pathlib import Path
 
 REQUIRED = {"app", "project", "scheme", "unitTestTarget", "lintExcluded"}
 OPTIONAL = {"uiTestTarget", "xcodebuildExtraArgs", "versionSource", "reviewFocus", "notes",
-            "github", "requiredChecks"}
+            "github", "requiredChecks", "criticMinLines"}
 
 
 def fail(msg: str) -> None:
@@ -46,6 +46,12 @@ def main() -> None:
     excluded = cfg["lintExcluded"]
     if not isinstance(extra, list) or not isinstance(excluded, list):
         fail("xcodebuildExtraArgs and lintExcluded must be lists")
+
+    # Read by the "Critic verdict" check in each repo (scripts/critic_verdict.py)
+    # and by PROCESS.md's definition of a major change.
+    limit = cfg.get("criticMinLines", 0)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
+        fail("criticMinLines must be a whole number of lines, 0 or more")
 
     q = shlex.quote
     print(f"APP_NAME={q(cfg['app'])}")
