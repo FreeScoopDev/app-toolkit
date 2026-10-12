@@ -38,9 +38,17 @@ fi
 
 if [ -z "$MERGE" ]; then
   REPO=$(g remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')
-  MERGE=$(gh pr list --repo "$REPO" --state merged --limit 30 --json headRefName,mergeCommit,number \
-    --jq 'map(select(.headRefName | startswith("chore/release-"))) | first | "\(.mergeCommit.oid) #\(.number)"') || { echo "could not list merged PRs for $REPO" >&2; exit 2; }
-  [ -n "$MERGE" ] && [ "$MERGE" != " #" ] || { echo "no merged PR whose branch starts with chore/release- in the last 30" >&2; exit 2; }
+  # Searched by branch, not read off the newest N merged PRs: on 2026-10-12
+  # Wockett had merged 34 PRs since its 1.15 release PR (#170), a window of 30
+  # missed it, and the empty pick became "null #null", which passed the old
+  # empty check and failed later as "release merge commit null is not in this
+  # repository". The search can match loosely, so the prefix is still checked
+  # here, and nothing found prints "" rather than "null".
+  MERGE=$(gh pr list --repo "$REPO" --state merged --search "head:chore/release-" --limit 10 \
+    --json headRefName,mergeCommit,number,mergedAt \
+    --jq 'map(select((.headRefName | startswith("chore/release-")) and .mergeCommit.oid != null)) | sort_by(.mergedAt) | last
+          | if . == null then "" else "\(.mergeCommit.oid) #\(.number)" end') || { echo "could not list merged PRs for $REPO" >&2; exit 2; }
+  [ -n "$MERGE" ] || { echo "no merged PR whose branch starts with chore/release- found in $REPO; pass --merge-commit <sha>" >&2; exit 2; }
   PR=${MERGE#* }; MERGE=${MERGE%% *}
 else
   PR="(given)"
