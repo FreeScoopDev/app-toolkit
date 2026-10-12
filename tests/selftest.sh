@@ -315,6 +315,23 @@ if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" --merge-commit "$LA
 git -C "$T/rel-joe" fetch -q origin side; if out=$("$K/bin/release-build-check.sh" "$T/rel-joe" "$SIDE" --merge-commit "$REL"); then bad "release-build-check accepted a build off the line"; else
   grep -q 'not on the release commit' <<<"$out" && ok "release-build-check says when the build is off the line" || bad "release-build-check off-line output: $out"; fi
 code=0; "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" --bogus >/dev/null 2>&1 || code=$?; [[ $code -eq 2 ]] && ok "release-build-check refuses an unknown option" || bad "release-build-check unknown option exit $code"
+# The lookup without --merge-commit, through a fake gh that runs the script's
+# --jq on canned search results: the newest release PR by merge time, never
+# the first listed, and a clear refusal (not "null") when there is none.
+mkdir -p "$T/relbin"
+cat > "$T/relbin/gh" <<'EOF'
+#!/usr/bin/env bash
+q=""; while [ $# -gt 0 ]; do [ "$1" = "--jq" ] && q="$2"; shift; done
+jq -r "$q" "$FAKE_GH_PRS"
+EOF
+chmod +x "$T/relbin/gh"
+printf '[{"headRefName":"chore/release-0.9","mergeCommit":{"oid":"%s"},"mergedAt":"2026-01-01T00:00:00Z","number":5},
+{"headRefName":"chore/release-1.0","mergeCommit":{"oid":"%s"},"mergedAt":"2026-02-01T00:00:00Z","number":9},
+{"headRefName":"fix/chore-release-notes","mergeCommit":{"oid":"%s"},"mergedAt":"2026-03-01T00:00:00Z","number":11}]\n' "$FEATURE" "$REL" "$LATER" > "$T/rel-prs.json"
+if out=$(FAKE_GH_PRS="$T/rel-prs.json" PATH="$T/relbin:$PATH" "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL") && grep -q '^OK:.*#9' <<<"$out"; then ok "release-build-check looks up the newest release PR"; else bad "release-build-check lookup: $out"; fi
+printf '[]\n' > "$T/rel-none.json"
+code=0; out=$(FAKE_GH_PRS="$T/rel-none.json" PATH="$T/relbin:$PATH" "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" 2>&1) || code=$?
+if [[ $code -eq 2 ]] && grep -q 'no merged PR whose branch starts with chore/release-' <<<"$out" && ! grep -q null <<<"$out"; then ok "release-build-check refuses clearly when no release PR is found"; else bad "release-build-check with no release PR (exit $code): $out"; fi
 
 # cloudkit-schema-check: the fields a SwiftData model needs in CloudKit, and a
 # schema export compared with them. The model mixes every case: an optional,
