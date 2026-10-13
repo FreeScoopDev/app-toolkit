@@ -1,0 +1,78 @@
+# Unit tests for every pull request, on GitHub's own macOS runner.
+#
+# Why GitHub Actions and not Xcode Cloud: Xcode Cloud's 25 compute hours a
+# month are shared by every app on the developer membership. When they ran
+# out (2026-10-10), every PR's Xcode Cloud test run was cancelled and nothing
+# could merge until the period reset. Wockett (2026-09-28) and PlowR
+# (2026-10-10) both moved their tests here. Xcode Cloud keeps Release Flow
+# only (docs/ci.md). The repository is public, so these runners are free,
+# macOS included. On a PRIVATE repo, GitHub bills macOS minutes at 10x:
+# remove this file there rather than pay for it (PROCESS.md, "Private repos").
+#
+# What runs: the __UNIT_TESTS__ target through the shared toolkit's
+# bin/test.sh at one pinned toolkit commit, so CI and a local
+# scripts/test.sh --unit-only judge a run by the same signals: xcodebuild's
+# exit code, the literal ** TEST SUCCEEDED **, and a non-zero count in the
+# result bundle. UI tests are left out: on this runner they were slow and
+# flaky for Wockett. Add a separate, advisory job for them when the app has
+# a uiTestTarget worth running.
+#
+# "Unit tests (iOS)" becomes a required check once it has passed on a PR
+# (NEW-APP.md, part 4).
+
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Read the code, nothing more.
+permissions:
+  contents: read
+
+# A newer push to the same PR cancels the run in progress.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests (iOS)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # Pinned to a commit, not main, so a toolkit change is a deliberate bump.
+      # new-app.sh wrote the toolkit commit it ran from.
+      - name: Check out the shared toolkit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: FreeScoopDev/app-toolkit
+          ref: __TOOLKIT_SHA__
+          path: toolkit
+
+      # The newest Xcode 26 on the image, matching the Xcode Release Flow is
+      # pinned to (docs/ci.md). Change both together.
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Run the tests (__UNIT_TESTS__)
+        env:
+          TEST_OUTPUT_DIR: ${{ runner.temp }}/__SLUG__-tests
+        run: bash toolkit/bin/test.sh "$GITHUB_WORKSPACE" --unit-only
+
+      - name: Upload the log and result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-test-results
+          path: ${{ runner.temp }}/__SLUG__-tests
+          retention-days: 7

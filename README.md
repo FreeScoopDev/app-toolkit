@@ -45,7 +45,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
   "lintExcluded": ["PlowRTests", "docs"],
   "versionSource": "project.pbxproj",
   "github": "FreeScoopDev/PlowR",
-  "requiredChecks": ["PlowR | CI Tests | Test - iOS", "Service-language guard", "SwiftLint"],
+  "requiredChecks": ["Unit tests (iOS)", "Service-language guard", "SwiftLint", "Critic verdict"],
   "criticMinLines": 40,
   "reviewFocus": ["what the critic should check every time for this app"],
   "notes": "free text"
@@ -61,8 +61,9 @@ The repos are public, so nothing private goes in this file.
 ## Each repo's wrappers
 
 `scripts/test.sh`, `scripts/lint.sh` and `scripts/ci_pick_simulator.sh` in each
-repo only forward to `bin/` here, passing the repo root. CI never calls them
-(Xcode Cloud runs the scheme; GitHub Actions runs SwiftLint directly), so a
+repo only forward to `bin/` here, passing the repo root. CI never calls them:
+`.github/workflows/tests.yml` checks this toolkit out at a pinned commit and
+calls `bin/test.sh` itself, and `guards.yml` runs SwiftLint directly, so a
 clone without this toolkit still builds and passes CI. The wrappers just say
 where the toolkit is expected if it's missing.
 
@@ -121,7 +122,9 @@ was called, so it runs on Linux.
 Work in a worktree of this repo, never in `~/.claude/toolkit` itself: that
 checkout is what every app's scripts run from, and what every app's
 `CLAUDE.md` imports. Change it through a PR, like an app: `tests/selftest.sh`
-is the required check (`.claude/app.json`), and the PR merges itself once it
-passes. Then pull it into `~/.claude/toolkit`. Run both apps' `scripts/test.sh` and
+is the required check (`.claude/app.json`). **The PR is never queued for
+auto-merge: Joe clicks Squash and merge** (PROCESS.md, "Joe merges these"),
+because these scripts run on his Mac in every session and `main` merged
+unreviewed until the 2026-10-12 audit. Then pull it into `~/.claude/toolkit`. Run both apps' `scripts/test.sh` and
 `scripts/lint.sh` (with `APP_TOOLKIT` pointing at the worktree) before calling
 a change done, because it affects every app at once.
