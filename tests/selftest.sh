@@ -329,6 +329,13 @@ printf '[{"headRefName":"chore/release-0.9","mergeCommit":{"oid":"%s"},"mergedAt
 {"headRefName":"chore/release-1.0","mergeCommit":{"oid":"%s"},"mergedAt":"2026-02-01T00:00:00Z","number":9},
 {"headRefName":"fix/chore-release-notes","mergeCommit":{"oid":"%s"},"mergedAt":"2026-03-01T00:00:00Z","number":11}]\n' "$FEATURE" "$REL" "$LATER" > "$T/rel-prs.json"
 if out=$(FAKE_GH_PRS="$T/rel-prs.json" PATH="$T/relbin:$PATH" "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL") && grep -q '^OK:.*#9' <<<"$out"; then ok "release-build-check looks up the newest release PR"; else bad "release-build-check lookup: $out"; fi
+# A release PR opened from a branch that is not chore/release-* (PlowR 1.7.0's
+# #169 had head main-rs8k2l): found by its "Release " title, newer than the
+# last chore/release-* PR, and a title that only starts with "Releases" is not one.
+printf '[{"headRefName":"chore/release-1.6.1","mergeCommit":{"oid":"%s"},"mergedAt":"2026-10-11T01:14:17Z","number":156,"title":"Release 1.6.1"},
+{"headRefName":"main-rs8k2l","mergeCommit":{"oid":"%s"},"mergedAt":"2026-10-11T18:19:45Z","number":169,"title":"Release 1.7.0"},
+{"headRefName":"docs/releases-page","mergeCommit":{"oid":"%s"},"mergedAt":"2026-10-11T21:07:25Z","number":173,"title":"Releases page: new copy"}]\n' "$FEATURE" "$REL" "$LATER" > "$T/rel-title.json"
+if out=$(FAKE_GH_PRS="$T/rel-title.json" PATH="$T/relbin:$PATH" "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL") && grep -q '^OK:.*#169' <<<"$out"; then ok "release-build-check finds a release PR by its title when its branch is not chore/release-*"; else bad "release-build-check title lookup: $out"; fi
 printf '[]\n' > "$T/rel-none.json"
 code=0; out=$(FAKE_GH_PRS="$T/rel-none.json" PATH="$T/relbin:$PATH" "$K/bin/release-build-check.sh" "$T/rel-joe" "$REL" 2>&1) || code=$?
 if [[ $code -eq 2 ]] && grep -q 'no merged PR whose branch starts with chore/release-' <<<"$out" && ! grep -q null <<<"$out"; then ok "release-build-check refuses clearly when no release PR is found"; else bad "release-build-check with no release PR (exit $code): $out"; fi
