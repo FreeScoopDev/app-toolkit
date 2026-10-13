@@ -23,7 +23,7 @@ What is specific to __APP__:
 | Xcode project / scheme | `__PROJECT__.xcodeproj` / `__SCHEME__` |
 | Unit tests | `__UNIT_TESTS__` |
 | Required checks on `main` | listed in `.claude/app.json` → `requiredChecks` |
-| Slack | `#__SLUG__-ci`, `#__SLUG__-releases` |
+| Slack | `#__SLUG__-releases` (Release Flow) |
 | App Store Apple ID | not created yet |
 
 ## What this is
@@ -41,8 +41,8 @@ review checklist in `.claude/app.json` → `reviewFocus` too.)
 
 ## Running things
 
-    scripts/test.sh              # full scheme (what CI runs)
-    scripts/test.sh --unit-only  # faster, but NOT what CI runs
+    scripts/test.sh              # full scheme, unit and UI tests
+    scripts/test.sh --unit-only  # what CI's "Unit tests (iOS)" job runs
     scripts/lint.sh              # SwiftLint with verified exclusions
 
 `~/.claude/toolkit/bin/repo-check.sh .` checks the GitHub settings against the

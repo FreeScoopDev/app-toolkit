@@ -5,8 +5,10 @@ Usage: new_app.py <repo root> <owner/name> [--local-only]
 
 Adds the standard files from templates/app (CLAUDE.md importing PROCESS.md,
 CHANGELOG.md, changelog.d/, .claude/app.json, .swiftlint.yml, the scripts/
-wrappers, the Linux guards workflow, docs/ci.md), commits them, creates the
-public GitHub repo, pushes, and applies the repo standard (repo_settings.py).
+wrappers, the Linux guards workflow, the GitHub Actions tests workflow pinned
+to this toolkit's commit, docs/ci.md, a blank privacy manifest in the app's
+folder), commits them, creates the public GitHub repo, pushes, and applies
+the repo standard (repo_settings.py).
 --local-only stops after the commit, touching nothing on GitHub.
 
 Everything is checked before anything is written: an existing file is never
@@ -67,6 +69,18 @@ def main() -> None:
         fail(f"no {unit_tests}/ folder. Create the project with Include Tests ticked "
              f"(or add a Unit Testing Bundle target named {unit_tests}).")
 
+    app_folder = root / project
+    if not app_folder.is_dir():
+        fail(f"no {project}/ folder for the app's source, where the privacy manifest goes. "
+             "Create the project in Xcode as NEW-APP.md part 1 says.")
+    # tests.yml checks the toolkit out at this commit, so CI runs the same
+    # bin/test.sh this toolkit has now.
+    sha = subprocess.run(["git", "-C", str(TOOLKIT), "rev-parse", "--verify", "HEAD"],
+                         capture_output=True, text=True)
+    if sha.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", sha.stdout.strip()):
+        fail(f"could not read this toolkit's commit in {TOOLKIT} (it must be a git checkout)")
+    toolkit_sha = sha.stdout.strip()
+
     values = {
         "__APP__": app,
         "__REPO__": repo,
@@ -75,13 +89,18 @@ def main() -> None:
         "__UNIT_TESTS__": unit_tests,
         "__SLUG__": app.lower(),
         "__DATE__": date.today().isoformat(),
+        "__TOOLKIT_SHA__": toolkit_sha,
     }
 
     # 2. Plan every file; refuse before writing anything if one exists.
     plan: list[tuple[Path, Path]] = []
     for src in sorted(p for p in TEMPLATES.rglob("*") if p.is_file()):
         rel = src.relative_to(TEMPLATES)
-        dest = root / rel.parent / RENAMES.get(rel.name, rel.name)
+        # A path part may be a placeholder too: __PROJECT__/ is the app's folder.
+        parent = Path(*[values.get(part, part) for part in rel.parent.parts])
+        dest = root / parent / RENAMES.get(rel.name, rel.name)
+        if PLACEHOLDER.search(str(dest.relative_to(root))):
+            fail(f"template path {rel} has a placeholder new-app does not fill")
         plan.append((src, dest))
     existing = [str(d.relative_to(root)) for _, d in plan if d.exists()]
     if existing:
@@ -113,7 +132,9 @@ def main() -> None:
     run("git", "commit", "-q", "-m", "Start from the FreeScoopDev app template\n\n"
         "Standard files from app-toolkit/templates/app: CLAUDE.md importing the shared\n"
         "PROCESS.md, changelog.d/, .claude/app.json, SwiftLint, script wrappers, the\n"
-        "Linux guards workflow and docs/ci.md.", cwd=root)
+        "Linux guards workflow, the tests workflow, docs/ci.md and a blank privacy\n"
+        "manifest.", cwd=root)
+    print(f"tests.yml runs the toolkit at {toolkit_sha[:7]}; that commit must be on GitHub.")
     print(f"Committed in {root}.")
     if local_only:
         print("--local-only: nothing was created on GitHub.")
@@ -127,7 +148,7 @@ def main() -> None:
     if res.returncode != 0:
         fail("the repo exists, but applying the standard failed (above). Fix, then run "
              "repo-check.sh --apply again.")
-    print("\nNext: NEW-APP.md, part 3 (Joe: App Store Connect and Xcode Cloud).")
+    print("\nNext: NEW-APP.md, part 3 (Joe: App Store Connect, Slack and Release Flow).")
 
 
 if __name__ == "__main__":

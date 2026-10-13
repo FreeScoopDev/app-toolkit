@@ -56,7 +56,7 @@ else bad "new-app on a well-formed project (the checks that need its output are 
 COMMITTED=$(git -C "$T/Kiln" show --name-only --format= HEAD 2>/dev/null || true)
 MISSING=0; N=0
 while IFS= read -r f; do
-  N=$((N + 1)); d=$(dirname "$f"); b=$(basename "$f")
+  N=$((N + 1)); d=$(dirname "$f"); d=${d//__PROJECT__/Kiln}; b=$(basename "$f")
   case "$b" in gitignore) b=.gitignore ;; swiftlint.yml) b=.swiftlint.yml ;; esac
   [[ "$d" == . ]] && want="$b" || want="$d/$b"
   grep -qxF "$want" <<<"$COMMITTED" || { MISSING=$((MISSING + 1)); echo "      not committed: $want"; }
@@ -68,6 +68,15 @@ ACTUAL=$(awk '/^excluded:/{f=1;next} /^[^ -]/{f=0} f&&/^ *- /{gsub(/^ *- */,"");
 EXPECTED=$(python3 -c 'import json,sys; print(" ".join(sorted(json.load(open(sys.argv[1]))["lintExcluded"]))+" ")' "$T/Kiln/.claude/app.json")
 [[ "$ACTUAL" == "$EXPECTED" ]] && ok "lint exclusions agree ($ACTUAL)" || bad "lint exclusions differ: yml '$ACTUAL' vs app.json '$EXPECTED'"
 for s in test lint ci_pick_simulator; do [[ -x "$T/Kiln/scripts/$s.sh" ]] || bad "scripts/$s.sh not executable"; done
+# tests.yml runs this toolkit's own commit and the app's unit target, and the
+# privacy manifest lands in the app's folder, where Xcode's synchronized group
+# picks it up.
+KSHA=$(git -C "$K" rev-parse HEAD)
+if grep -qE "^ *ref: $KSHA\$" "$T/Kiln/.github/workflows/tests.yml" && grep -q 'name: Run the tests (KilnTests)' "$T/Kiln/.github/workflows/tests.yml" \
+   && grep -q 'name: Unit tests (iOS)' "$T/Kiln/.github/workflows/tests.yml"; then ok "tests.yml pins this toolkit's commit and runs KilnTests"; else bad "tests.yml placeholders: $(grep -nE 'ref:|Run the tests' "$T/Kiln/.github/workflows/tests.yml")"; fi
+[[ -f "$T/Kiln/Kiln/PrivacyInfo.xcprivacy" && ! -e "$T/Kiln/__PROJECT__" ]] && ok "privacy manifest is in the app's folder" || bad "privacy manifest not at Kiln/PrivacyInfo.xcprivacy"
+python3 -c 'import plistlib,sys; d=plistlib.load(open(sys.argv[1],"rb")); sys.exit(0 if d["NSPrivacyTracking"] is False and d["NSPrivacyAccessedAPITypes"]==[] else 1)' "$T/Kiln/Kiln/PrivacyInfo.xcprivacy" \
+  && ok "privacy manifest parses: no tracking, nothing declared" || bad "privacy manifest does not parse"
 
 # new-app must refuse, writing nothing.
 refuses "new-app refuses a second run" "$T/Kiln" "$K/bin/new-app.sh" "$T/Kiln" FreeScoopDev/Kiln --local-only
@@ -75,6 +84,8 @@ fake "$T/Brine" Brine noscheme
 refuses "new-app refuses a project with no shared scheme" "$T/Brine" "$K/bin/new-app.sh" "$T/Brine" FreeScoopDev/Brine --local-only
 mkdir -p "$T/Nope/Nope.xcodeproj/xcshareddata/xcschemes"; touch "$T/Nope/Nope.xcodeproj/xcshareddata/xcschemes/Nope.xcscheme"
 refuses "new-app refuses a project with no tests" "$T/Nope" "$K/bin/new-app.sh" "$T/Nope" FreeScoopDev/Nope --local-only
+fake "$T/Bare" Bare; rmdir "$T/Bare/Bare"
+refuses "new-app refuses a project with no app folder" "$T/Bare" "$K/bin/new-app.sh" "$T/Bare" FreeScoopDev/Bare --local-only
 
 # Config validation (no network needed: these fail before any gh call).
 mkdir -p "$T/cfg/.claude"

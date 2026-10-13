@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The app's privacy manifest, blank on purpose: no tracking, nothing
+  collected, no required-reason APIs declared. App Store Connect warns on
+  upload when one is missing. Fill it in as the app grows: data it collects
+  (NSPrivacyCollectedDataTypes) and the reason for each required-reason API
+  (NSPrivacyAccessedAPITypes; UserDefaults and @AppStorage need CA92.1).
+  Xcode's synchronized app folder picks the file up; it needs no project entry.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array/>
+</dict>
+</plist>

@@ -52,7 +52,8 @@ Claude, in a worktree of its own for each branch:
    private, so never a link) on the `**Spec:**` line. Appends each run's
    findings to the spec file under `## Critic` and pushes it. If the PR adds
    or changes tests, also runs `test-auditor` on them and fixes what it finds.
-6. Queues the merge: `gh pr merge <N> --auto --squash`. Gives Joe the link.
+6. Queues the merge: `gh pr merge <N> --auto --squash`, unless the PR is one
+   of those under "Joe merges these" below. Gives Joe the link.
    If Claude Code's auto-mode safety check refuses it, Claude does not retry
    or look for a way around it: it tells Joe, and he clicks **Squash and
    merge** once every required check is green. (The check queued #93–#106
@@ -67,8 +68,14 @@ Claude, in a worktree of its own for each branch:
 8. Fixes anything that blocks the merge: a red check, or a conflict (merge
    `origin/main` in, run `scripts/test.sh`, push). GitHub squash-merges once
    every required check is green, and deletes the branch.
-9. After the merge, removes the branch's worktree (`git worktree remove`) and
-   deletes the local branch.
+9. After the merge, removes the branch's worktree (`git worktree remove`),
+   deletes the local branch, and deletes the worktree's DerivedData folder:
+   the one in `~/Library/Developer/Xcode/DerivedData/` whose `info.plist`
+   `WorkspacePath` is the worktree's `.xcodeproj`
+   (`/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' <folder>/info.plist`).
+   `git worktree remove` leaves it behind, about 290 MB a branch; ten of them
+   were found on a nearly full disk on 2026-10-12. Only that folder: other
+   sessions may be building in the rest.
 
 ### Major changes
 
@@ -97,6 +104,15 @@ often that there was no spec to check against.
 
 **Hold.** If Joe says "hold #N", Claude runs `gh pr merge <N> --disable-auto`,
 and that PR waits for Joe's own **Squash and merge**.
+
+**Joe merges these.** A PR is never queued for auto-merge when it touches an
+app's privacy policy or terms, `docs/staff/**`, an
+`apple-app-site-association` file or any `.github/workflows/` file, and no
+`app-toolkit` PR ever is. Claude opens it, says in the description that
+it waits for Joe, and Joe clicks **Squash and merge**. Why: `docs/` is live on
+the website minutes after a merge, a workflow change can rewrite the checks
+that guard every later PR, and toolkit scripts run on Joe's Mac in every
+session (2026-10-12 audit, security findings 11 and 12).
 
 Why auto-merge: by the time Joe clicked Merge, the required checks had already
 passed, and he was not reviewing code, so the click added only waiting. `main`
@@ -151,7 +167,11 @@ Joe then:
 
 1. Merges the release PR.
 2. Does the console steps, if the Ship Card lists any.
-3. App Store Connect → Apps → the app → Xcode Cloud → Release Flow → **Start
+3. First, App Store Connect → Xcode Cloud → **Usage**: look at the hours
+   left this period. Every app shares one pool of 25, and it ran out around
+   2026-10-10. If it is nearly empty, or Start Build is refused, tell Claude
+   and follow "Release Flow unavailable" below. Otherwise App Store Connect →
+   Apps → the app → Xcode Cloud → Release Flow → **Start
    Build**, right after the release PR merges: Release Flow archives whatever
    `main` is at that moment, and routine PRs merge themselves. Waits for the
    app's Slack release channel and gives Claude the build number **and the
@@ -161,8 +181,11 @@ Joe then:
    must be the release PR's merge commit, or it carries changes the Ship Card
    never listed. A mismatch means no QA on that build; Claude lists the extra
    commits and the next step is a fresh build or a fresh cut.
-4. Installs it from TestFlight, works through the QA cards, marks each Passed
-   in Notion. A failure goes back through "Every change", then step 3 again.
+4. Installs it from TestFlight, works through the QA cards, and tells Claude
+   which passed and which failed ("all passed" is enough). Claude sets each
+   card to Passed or Failed in Notion, and puts the build number, the checked
+   commit and the QA result on the Releases row. A failure goes back through
+   "Every change", then step 3 again.
 5. App Store Connect → Distribution → new version → Add Build → pastes What's
    New → Add for Review → Submit. Tells Claude "submitted build N".
 
@@ -170,14 +193,26 @@ After step 5, Claude tags the build's commit `vX.Y` (lightweight) and pushes
 the tag, and sets the Notion Releases row to `In Review` with the build number
 and the commit the check confirmed.
 
-A **manual Xcode archive** is emergency-only, for when Xcode Cloud itself is
-down. It builds whatever is on disk in Joe's folder.
+**Release Flow unavailable** (Xcode Cloud down, or its hours used up): only
+the build in step 3 changes. Claude makes a fresh worktree of the release
+PR's merge commit
+(`git worktree add --detach ~/Desktop/Apps/<App>-claude/release-<version> <merge commit>`)
+and Joe archives that folder in Xcode (Product → Archive → Distribute App),
+never his own folder if it can be avoided: it builds whatever is on disk
+there, which is how Wockett build 84 shipped without a merged fix. The app's
+`CLAUDE.md` says how a manual archive gets its build number. Everything else
+still applies: the Ship Card, the `release-checker` report, the crash step,
+and `bin/release-build-check.sh <repo> <commit archived> --merge-commit <merge
+commit>`, with the merge commit passed explicitly, since no Slack post names
+one. PlowR 1.7.0 went out this way on 2026-10-11 with none of those, and the
+record had to be rebuilt afterwards.
 
 ## Git rules
 
 - Claude commits, pushes branches, queues auto-merge and pushes release tags.
   It never pushes to `main`, never force-pushes, never merges past a failing
-  or missing check, and never auto-merges the release PR.
+  or missing check, and never auto-merges the release PR or a PR under "Joe
+  merges these".
 - **Joe's folder** (`~/Desktop/Apps/<App>`) is his. Git there is read-only,
   with `--no-optional-locks`: no `switch`, `checkout`, `merge`, `pull` or
   `commit`. If it needs updating before an emergency archive, give Joe the
@@ -194,6 +229,16 @@ down. It builds whatever is on disk in Joe's folder.
   sync goes wrong (the 2026-09-26 iCloud move cost SqwatrApp its history).
 - In multi-step shell, `set -euo pipefail`. A failing guard does not stop a
   `&&` chain on the next line.
+
+**Private repos.** Repos are public by default; private is for client work
+(JDayOffroad). On GitHub's free plan a private repo can have no ruleset or
+branch protection (the API answers 403) and no auto-merge, so nothing on
+GitHub enforces the gate and the steps above that rely on it do not apply.
+The gate is then a rule: a branch merges only after `scripts/test.sh`
+passes locally and its Linux checks are green, and the app's `CLAUDE.md`
+says who merges. Never add a macOS job to a private repo casually: GitHub
+bills macOS minutes there at 10x, an estimated $264 per 15 days at the
+live apps' load.
 
 ## Verifying claims
 
@@ -219,3 +264,14 @@ thing on purpose and watch it go red.
   removed on Claude's side instead, remove it rather than handing Joe a rule.
 - Terminal commands as one complete copy-paste block, with a plain-English
   note on what it does.
+- When Joe asks for something (a command, a link, a file), put the thing
+  itself in the reply, even if it was given earlier, and repeat it in the
+  turn's final message: text between tool calls in a long turn gets missed.
+- Anything for Joe's clipboard goes through `LC_ALL=en_US.UTF-8 pbcopy`
+  (and `pbpaste`). Claude's shell has no `LANG`, so plain `pbcopy` garbled
+  "·" into "¬∑", and the pasted text landed in a real database.
+- Delete build copies (scratch DerivedData, archives, mutant copies, result
+  bundles) as soon as their check is done, and check
+  `df -h /System/Volumes/Data` before a batch of builds: they once filled
+  Joe's disk and broke his iPhone build. Never clear the shared DerivedData or
+  another session's files without asking.
