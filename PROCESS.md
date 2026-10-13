@@ -225,6 +225,10 @@ record had to be rebuilt afterwards.
   `CLAUDE.md` from `origin/main` when that happens, and a TOOLKIT BEHIND
   line when `~/.claude/toolkit` needs a fast-forward. If the banner is in
   the session's context, follow the printed file, not the one on disk.
+- **The toolkit is pulled only after Joe sees what's coming.** Its scripts
+  run on Joe's Mac in every session, so the TOOLKIT BEHIND line lists the
+  incoming commits and files. Claude shows Joe that list and fast-forwards
+  `~/.claude/toolkit` only after he says yes.
 - Every branch is pushed. A repo with no remote has no copy when a disk or a
   sync goes wrong (the 2026-09-26 iCloud move cost SqwatrApp its history).
 - In multi-step shell, `set -euo pipefail`. A failing guard does not stop a

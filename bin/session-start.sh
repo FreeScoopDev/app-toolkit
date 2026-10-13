@@ -71,7 +71,10 @@ check_toolkit() {
   fetch_main "$k"
   behind=$(behind_count "$k"); [ -n "$behind" ] || return 0
   [ "$behind" -gt 0 ] || return 0
-  echo "TOOLKIT BEHIND: $k is $behind commit(s) behind origin/main, so PROCESS.md, the scripts and the agents may be out of date. Bring it up to date with a fast-forward, which changes nothing else: git -C $k pull --ff-only"
+  echo "TOOLKIT BEHIND: $k is $behind commit(s) behind origin/main, so PROCESS.md, the scripts and the agents may be out of date. These scripts run on Joe's Mac in every session, so show Joe the incoming changes below and pull only after he says yes, with a fast-forward, which changes nothing else: git -C $k pull --ff-only"
+  echo "----- incoming toolkit changes -----"
+  git -C "$k" --no-optional-locks log --stat --format='%h %s (%an, %cs)' HEAD..origin/main 2>/dev/null | head -60
+  echo "----- end of incoming toolkit changes -----"
 }
 
 # clean_test_clones: deletes simulator copies that xcodebuild's parallel
