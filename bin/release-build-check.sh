@@ -14,7 +14,8 @@
 #   <build commit>   the commit in the Slack post (short or full SHA)
 #   --merge-commit   the release PR's merge commit, if already known; without
 #                    it, the newest merged PR whose branch starts with
-#                    chore/release- is looked up with gh (needs the network)
+#                    chore/release- or whose title starts with "Release " is
+#                    looked up with gh (needs the network)
 # Exit 0 when they match, 1 when they do not, 2 on a usage error.
 set -euo pipefail
 
@@ -44,11 +45,21 @@ if [ -z "$MERGE" ]; then
   # empty check and failed later as "release merge commit null is not in this
   # repository". The search can match loosely, so the prefix is still checked
   # here, and nothing found prints "" rather than "null".
-  MERGE=$(gh pr list --repo "$REPO" --state merged --search "head:chore/release-" --limit 10 \
-    --json headRefName,mergeCommit,number,mergedAt \
-    --jq 'map(select((.headRefName | startswith("chore/release-")) and .mergeCommit.oid != null)) | sort_by(.mergedAt) | last
-          | if . == null then "" else "\(.mergeCommit.oid) #\(.number)" end') || { echo "could not list merged PRs for $REPO" >&2; exit 2; }
-  [ -n "$MERGE" ] || { echo "no merged PR whose branch starts with chore/release- found in $REPO; pass --merge-commit <sha>" >&2; exit 2; }
+  # Also searched by title: PlowR 1.7.0's release PR (#169, "Release 1.7.0")
+  # was opened from branch main-rs8k2l, so the branch search alone returned
+  # 1.6.1's #156 and a build of the right commit printed MISMATCH. Both
+  # searches print "<mergedAt> <sha> #<n>" per match (UTC timestamps, so they
+  # sort as text), and the newest across both wins.
+  # shellcheck disable=SC2016
+  PICK='.[] | select(((.headRefName | startswith("chore/release-")) or ((.title // "") | startswith("Release "))) and .mergeCommit.oid != null)
+        | "\(.mergedAt) \(.mergeCommit.oid) #\(.number)"'
+  FOUND=$( { gh pr list --repo "$REPO" --state merged --search "head:chore/release-" --limit 10 \
+               --json headRefName,title,mergeCommit,number,mergedAt --jq "$PICK" &&
+             gh pr list --repo "$REPO" --state merged --search "Release in:title" --limit 20 \
+               --json headRefName,title,mergeCommit,number,mergedAt --jq "$PICK"; } ) \
+    || { echo "could not list merged PRs for $REPO" >&2; exit 2; }
+  MERGE=$(printf '%s\n' "$FOUND" | sed '/^$/d' | sort | tail -n 1 | cut -d' ' -f2-)
+  [ -n "$MERGE" ] || { echo "no merged PR whose branch starts with chore/release- or whose title starts with \"Release \" found in $REPO; pass --merge-commit <sha>" >&2; exit 2; }
   PR=${MERGE#* }; MERGE=${MERGE%% *}
 else
   PR="(given)"
