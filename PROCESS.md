@@ -46,8 +46,9 @@ Claude, in a worktree of its own for each branch:
    description says how each claim is known (see "Verifying claims").
 5. **On a major change, runs the critic.** Spawns the `critic` agent with the
    repo path, the diff range (`origin/main...HEAD`) and the spec file; fixes
-   every BLOCK finding, pushes, and runs it again until the verdict is not
-   BLOCK. Records the final verdict in the PR description's `**Critic
+   every BLOCK finding, pushes, and runs it once more on the fixes until the
+   verdict is not BLOCK. It runs once the branch is a stable build (slice
+   complete, checks green), not after each intermediate push. Records the final verdict in the PR description's `**Critic
    verdict:**` line, and the spec's path (the path only: the specs repo is
    private, so never a link) on the `**Spec:**` line. Appends each run's
    findings to the spec file under `## Critic` and pushes it. If the PR adds
@@ -206,6 +207,37 @@ and `bin/release-build-check.sh <repo> <commit archived> --merge-commit <merge
 commit>`, with the merge commit passed explicitly, since no Slack post names
 one. PlowR 1.7.0 went out this way on 2026-10-11 with none of those, and the
 record had to be rebuilt afterwards.
+
+## Token budget
+
+Claude's usage has a 5-hour and a weekly limit. One night of parallel
+branch builds on 2026-10-20 used about 1.05 billion cache-read tokens, 78% of
+it in subagents that each re-read a 350-650K context on every call, all on
+the most expensive model. These rules keep that down; they apply to every app.
+
+1. **Builds and mechanical checks run on Sonnet.** A subagent that implements
+   a branch from its spec, `test-auditor` and `release-checker` run on
+   `sonnet` (the two agents are set that way in `agents/`; pass
+   `model: sonnet` on a build subagent). Opus is for design, specs and the
+   `critic`. If a Sonnet build fails twice on the same problem, stop and hand
+   it to Opus with what was tried, rather than letting it loop.
+2. **Small, finishing builds.** One build subagent gets one slice, not a
+   whole milestone: it commits, pushes and stops. Past about 300K tokens of
+   context, or 150 tool calls with no push, end it and start a fresh agent
+   with a short handoff note.
+3. **Restart the orchestrating session at milestones.** After a milestone
+   merges, or at about 300K context, write a handoff note (state, open PRs,
+   next step) and start a new session or `/compact`. Joe does the restart.
+4. **The critic runs once per stable build** (see "Major changes"), not on
+   every push. It stays on Opus: it is the only reviewer, so this rule cuts
+   how often it runs, not how well.
+5. **Few parallel builds.** Separate worktrees are still how independent
+   slices run side by side, but start the fewest that keep Joe unblocked,
+   and stagger a batch when the 5-hour window is above about 60%
+   (`get_usage` shows it).
+6. **Report the cost.** A build or critic subagent's final summary includes
+   its call count and whether it hit a limit above, so the next brief is
+   sized from real numbers.
 
 ## Git rules
 

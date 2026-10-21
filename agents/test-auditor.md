@@ -2,7 +2,7 @@
 name: test-auditor
 description: Audits whether an iOS app's tests would actually fail if the code were wrong — by breaking the code on purpose in a throwaway copy and watching which tests go red. Use after tests are added or changed, before counting something as "covered", or for a periodic coverage-honesty pass on Wockett or PlowR. When spawning it, pass the repo path and either the tests to audit (files, suites, or a diff range) or the behaviour whose coverage is in question; it cannot ask follow-up questions. Never edits the real repo.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 effort: high
 color: yellow
 ---
