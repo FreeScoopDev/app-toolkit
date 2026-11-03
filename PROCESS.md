@@ -205,7 +205,8 @@ there, which is how Wockett build 84 shipped without a merged fix. The app's
 still applies: the Ship Card, the `release-checker` report, the crash step,
 and `bin/release-build-check.sh <repo> <commit archived> --merge-commit <merge
 commit>`, with the merge commit passed explicitly, since no Slack post names
-one. PlowR 1.7.0 went out this way on 2026-10-11 with none of those, and the
+one. Joe states which commit he archived, and the Ship Card records that the
+build is a manual archive (not Release Flow) and from which commit. PlowR 1.7.0 went out this way on 2026-10-11 with none of those, and the
 record had to be rebuilt afterwards.
 
 ## Token budget
