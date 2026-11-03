@@ -267,6 +267,31 @@ mkdir -p "$T/Kiln/Kiln/Store"; echo one > "$T/Kiln/Kiln/Store/Pay.txt"; seq 20 |
 git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm "head loosens the config"
 out=$(cd "$T/Kiln" && PR_BODY="" python3 scripts/critic_verdict.py "$TBASE" "$(git -C "$T/Kiln" rev-parse HEAD)" fix/x 2>&1) && code=0 || code=$?
 if [[ $code -eq 1 ]] && grep -q "touches critic path Kiln/Store" <<<"$out" && grep -q "(limit 5)" <<<"$out"; then ok "critic verdict: base config tamper (paths emptied, limit raised) is still major"; else bad "critic verdict: base config tamper (exit $code): $out"; fi
+# A PR cannot exclude its own code by naming it a test target in the same commit.
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+python3 - "$T/Kiln/.claude/app.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["uiTestTarget"] = "Kiln"; json.dump(d, open(sys.argv[1], "w"))
+PY
+seq 60 | sed 's/^/let b = /' > "$T/Kiln/Kiln/Big.swift"
+git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm "head names the app a test target"
+out=$(cd "$T/Kiln" && PR_BODY="" python3 scripts/critic_verdict.py "$CV_BASE" "$(git -C "$T/Kiln" rev-parse HEAD)" fix/x 2>&1) && code=0 || code=$?
+if [[ $code -eq 1 ]] && grep -q "(limit 40)" <<<"$out"; then ok "critic verdict: a head-only test target does not exclude code from the gate"; else bad "critic verdict: head-only test target tamper (exit $code): $out"; fi
+
+# A verdict more than 500 commits back is refused rather than walked.
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+seq 50 | sed 's/^/let x = /' > "$T/Kiln/Kiln/A.swift"
+git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm reviewed
+LR=$(git -C "$T/Kiln" rev-parse HEAD)
+python3 - "$LR" <<'PY' | git -C "$T/Kiln" fast-import --quiet
+import sys
+print("commit refs/heads/cvlong\ncommitter x <x@example.com> 0 +0000\ndata 1\nx\nfrom " + sys.argv[1])
+for i in range(501):
+    if i: print("commit refs/heads/cvlong\ncommitter x <x@example.com> 0 +0000\ndata 1\nx")
+    print(f"M 100644 inline docs/n{i}.txt\ndata 1\nx")
+PY
+out=$(cd "$T/Kiln" && PR_BODY="**Critic verdict:** APPROVE @ ${LR:0:9}" python3 scripts/critic_verdict.py "$CV_BASE" "$(git -C "$T/Kiln" rev-parse cvlong)" feat/x 2>&1) && code=0 || code=$?
+if [[ $code -eq 1 ]] && grep -q "more than 500 commits back" <<<"$out"; then ok "critic verdict: a verdict more than 500 commits back is refused"; else bad "critic verdict: 501-commit walk (exit $code): $out"; fi
 git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
 for v in '"Kiln/Store"' '[""]' '[1]' '[":!x"]'; do
   python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" "$v" <<'PY'

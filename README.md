@@ -61,7 +61,7 @@ the repo's "Critic verdict" check, which refuses to run without it.
 as `["Sources/Purchases/**"]` (no `:!` exclude or other `:` magic pathspecs;
 they are refused): a change touching any of them is major whatever its size or
 branch name. The check reads both this file and the base branch's copy and
-uses the stricter. `scripts/critic_verdict.py` counts Swift (`*.swift`) plus
+uses the stricter (lower limit, union of paths, test targets named by both). `scripts/critic_verdict.py` counts Swift (`*.swift`) plus
 `criticPaths`, so it is Swift-only: a repo with no Swift relies on `criticPaths`.
 The repos are public, so nothing private goes in this file.
 

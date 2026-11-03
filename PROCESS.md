@@ -105,11 +105,13 @@ an ancestor of the PR head, or if counted code (the Swift and `criticPaths`
 rule above) changed after it; a verdict with no sha still passes, with a
 warning. Merging main in after the review adds nothing; only the PR's own
 commits (and a merge's conflict resolutions) count. The check is Swift-only
-(it counts `*.swift` plus `criticPaths`), and it reads `criticMinLines` and
-`criticPaths` from both the base and the head, using the lower limit and the
-union of paths. It cannot police an edit to its own script, which is why
-`scripts/critic_verdict.py` and `.claude/app.json` belong in `criticPaths` and
-get the critic's review. Editing the description re-runs it. It proves a
+(it counts `*.swift` plus `criticPaths`), and it reads `criticMinLines`,
+`criticPaths` and the test targets from both the base and the head, using the
+lower limit, the union of paths, and only the test directories both name. It
+cannot police an edit to its own script. Listing `scripts/critic_verdict.py`
+and `.claude/app.json` in `criticPaths` makes accidental edits major (for
+`app.json` because the base's `criticPaths` are unioned in), but the critic is
+the control for a deliberate one. Editing the description re-runs it. It proves a
 verdict was recorded for this code, not that the review was good. An app with no remote has no PR and no check: the spec
 file's `## Critic` section is the record.
 

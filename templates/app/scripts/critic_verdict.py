@@ -12,10 +12,11 @@ deleted) of Swift outside the test targets (`unitTestTarget`, `uiTestTarget`),
 or any change under a `criticPaths` path or glob (consequence, not size).
 Swift-only: it counts `*.swift` (plus criticPaths), so a repo with no Swift
 relies on criticPaths and the manual verdict instead.
-The limit and criticPaths are read from both the base and the head of the PR
-and the stricter wins (lower limit, union of paths), so a PR cannot loosen its
-own gate by editing app.json. The check cannot police an edit to this script
-itself; list scripts/critic_verdict.py and .claude/app.json in criticPaths.
+The limit, criticPaths and test targets are read from both the base and the
+head of the PR and the stricter wins (lower limit, union of paths, and a test
+directory is excluded only if both name it), so a PR cannot loosen its own
+gate by editing app.json. The check cannot police an edit to this script
+itself; the critic is the control for that (see PROCESS.md).
 
 The verdict is a line such as `**Critic verdict:** APPROVE WITH FINDINGS @ 1a2b3c4`.
 HTML comments are removed first, so the PR template's hint text never counts.
@@ -41,6 +42,7 @@ from pathlib import Path
 
 VERDICT = re.compile(r"^[\s>*_-]*critic verdict[\s*_]*:[\s*_]*(.*)$", re.IGNORECASE | re.MULTILINE)
 KINDS = ("APPROVE WITH FINDINGS", "APPROVE", "BLOCK")
+MAX_COMMITS = 500  # the stale walk runs git per commit; a verdict this old is stale anyway
 SHA = re.compile(r"^(?:APPROVE WITH FINDINGS|APPROVE|BLOCK)\s*@\s*`?([^\s`.,;:)]*)", re.IGNORECASE)
 
 
@@ -92,6 +94,9 @@ def own_changed_lines(reviewed: str, head: str, test_dirs: list[str], critic_pat
     commit against its parent, each merge only by its conflict resolutions
     (--remerge-diff), so merging main in adds nothing of main's."""
     commits = git_ok("rev-list", "--first-parent", f"{reviewed}..{head}").stdout.split()
+    if len(commits) > MAX_COMMITS:
+        fail(f"The verdict names a commit more than {MAX_COMMITS} commits back; "
+             "re-run the critic on the head and record its sha.", 1)
     total = 0
     for c in commits:
         parents = git_ok("rev-list", "--parents", "-n1", c).stdout.split()[1:]
@@ -157,6 +162,9 @@ def main() -> None:
              "(no ':' exclude or magic pathspecs)", 2)
     # The stricter of base and head wins, so a PR cannot loosen its own gate.
     old = base_config(base)
+    if old:
+        old_dirs = [t for t in (old.get("unitTestTarget"), old.get("uiTestTarget")) if isinstance(t, str) and t]
+        test_dirs = [t for t in test_dirs if t in old_dirs]
     old_limit = old.get("criticMinLines")
     if isinstance(old_limit, int) and not isinstance(old_limit, bool) and 0 <= old_limit < limit:
         limit = old_limit
