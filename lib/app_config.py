@@ -16,7 +16,7 @@ from pathlib import Path
 
 REQUIRED = {"app", "project", "scheme", "unitTestTarget", "lintExcluded"}
 OPTIONAL = {"uiTestTarget", "xcodebuildExtraArgs", "versionSource", "reviewFocus", "notes",
-            "github", "requiredChecks", "criticMinLines"}
+            "github", "requiredChecks", "criticMinLines", "criticPaths"}
 
 
 def fail(msg: str) -> None:
@@ -48,10 +48,14 @@ def main() -> None:
         fail("xcodebuildExtraArgs and lintExcluded must be lists")
 
     # Read by the "Critic verdict" check in each repo (scripts/critic_verdict.py)
-    # and by PROCESS.md's definition of a major change.
+    # and by PROCESS.md's definition of a major change (criticPaths: pathspecs
+    # that make a change major whatever its size).
     limit = cfg.get("criticMinLines", 0)
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         fail("criticMinLines must be a whole number of lines, 0 or more")
+    paths = cfg.get("criticPaths", [])
+    if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
+        fail("criticPaths must be a list of non-empty git pathspecs")
 
     q = shlex.quote
     print(f"APP_NAME={q(cfg['app'])}")

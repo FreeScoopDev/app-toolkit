@@ -47,6 +47,7 @@ only; nothing private goes in). Checked out at `~/.claude/toolkit`.
   "github": "FreeScoopDev/PlowR",
   "requiredChecks": ["Unit tests (iOS)", "Service-language guard", "SwiftLint", "Critic verdict"],
   "criticMinLines": 40,
+  "criticPaths": [],
   "reviewFocus": ["what the critic should check every time for this app"],
   "notes": "free text"
 }
@@ -56,6 +57,9 @@ Required: `app`, `project`, `scheme`, `unitTestTarget`, `lintExcluded`.
 `repo-check.sh` also needs `github` and `requiredChecks`. `criticMinLines`
 defines a major change (PROCESS.md, "Major changes") for the process and for
 the repo's "Critic verdict" check, which refuses to run without it.
+`criticPaths` (optional, default none) is a list of git pathspecs, such as
+`["Sources/Purchases/**"]`: a change touching any of them is major whatever its
+size or branch name.
 The repos are public, so nothing private goes in this file.
 
 ## Each repo's wrappers

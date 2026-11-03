@@ -154,6 +154,82 @@ cv "no criticMinLines in app.json is a config error" 2 Kiln/A.swift 1 fix/x
 git -C "$T/Kiln" checkout -q -- .claude/app.json 2>/dev/null || true
 git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
 
+# Verdict bound to a commit: base -> R (50 lines of Swift, the reviewed commit)
+# -> H (an optional later change). cvs <label> <want exit> <want output
+# pattern> <verdict suffix> <later file> <later lines> [criticPaths JSON]; "@R@"
+# in the suffix is the reviewed commit's short sha, "@H@" the head's.
+cvs() {
+  local label=$1 want=$2 pat=$3 suffix=$4 file=$5 n=$6 paths=${7:-} code=0 r h out
+  git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+  seq 50 | sed 's/^/let x = /' > "$T/Kiln/Kiln/A.swift"
+  git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm reviewed
+  r=$(git -C "$T/Kiln" rev-parse --short=9 HEAD)
+  if [[ $n -gt 0 ]]; then
+    mkdir -p "$T/Kiln/$(dirname "$file")"; seq "$n" | sed 's/^/let y = /' > "$T/Kiln/$file"
+    git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm later
+  fi
+  h=$(git -C "$T/Kiln" rev-parse HEAD)
+  suffix=${suffix//@R@/$r}; suffix=${suffix//@H@/${h:0:9}}
+  if [[ -n $paths ]]; then
+    python3 - "$T/Kiln/.claude/app.json" "$paths" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = json.loads(sys.argv[2]); json.dump(d, open(sys.argv[1], "w"))
+PY
+  fi
+  out=$(cd "$T/Kiln" && PR_BODY="**Critic verdict:** APPROVE$suffix" python3 scripts/critic_verdict.py "$CV_BASE" "$h" feat/x 2>&1) || code=$?
+  git -C "$T/Kiln" checkout -q -- .claude/app.json 2>/dev/null || true
+  if [[ $code -eq $want ]] && grep -qE -- "$pat" <<<"$out"; then ok "critic verdict: $label"; else bad "critic verdict: $label (exit $code, wanted $want, pattern '$pat'): $out"; fi
+}
+cvs "sha equal to head passes" 0 "is the head" " @ @R@" x 0
+cvs "stale sha with counted Swift after it fails" 1 "predates 5 changed lines" " @ @R@" Kiln/B.swift 5
+cvs "stale sha with only docs after it passes" 0 "only docs, notes or tests" " @ @R@" docs/notes.md 99
+cvs "stale sha with a criticPaths file changed after it fails" 1 "predates 3 changed lines" " @ @R@" Kiln/Store/Pay.txt 3 '["Kiln/Store/**"]'
+cvs "stale sha with only test-target changes after it passes" 0 "only docs, notes or tests" " @ @R@" KilnTests/BTests.swift 99
+cvs "missing sha passes with a warning" 0 "WARNING: the verdict is not tied to a commit" "" x 0
+cvs "missing sha still passes when code changed" 0 "WARNING: the verdict is not tied to a commit" "" Kiln/B.swift 5
+cvs "unresolvable sha fails" 1 "not a single commit" " @ deadbeef0" x 0
+cvs "a sha that is not hex fails" 1 "7 to 40 hex" " @ main" x 0
+cvs "a too-short sha fails" 1 "7 to 40 hex" " @ abc12" x 0
+# A sha on a commit that is not an ancestor of the head: build a side commit.
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"; echo side > "$T/Kiln/side.txt"; git -C "$T/Kiln" add -A; git -C "$T/Kiln" commit -qm side
+SIDE=$(git -C "$T/Kiln" rev-parse --short=9 HEAD)
+cvs "non-ancestor sha fails" 1 "not an ancestor" " @ $SIDE" x 0
+# criticPaths: a one-line change under a listed path is major with no feat/ branch.
+cvp() { # cvp <label> <want exit> <pattern> <criticPaths JSON> <file> [body]
+  local label=$1 want=$2 pat=$3 paths=$4 file=$5 body=${6:-} code=0 h out
+  git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+  mkdir -p "$T/Kiln/$(dirname "$file")"; echo 'one line' > "$T/Kiln/$file"
+  git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm cp
+  h=$(git -C "$T/Kiln" rev-parse HEAD)
+  python3 - "$T/Kiln/.claude/app.json" "$paths" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = json.loads(sys.argv[2]); json.dump(d, open(sys.argv[1], "w"))
+PY
+  out=$(cd "$T/Kiln" && PR_BODY=$body python3 scripts/critic_verdict.py "$CV_BASE" "$h" fix/tiny 2>&1) || code=$?
+  git -C "$T/Kiln" checkout -q -- .claude/app.json 2>/dev/null || true
+  if [[ $code -eq $want ]] && grep -qE -- "$pat" <<<"$out"; then ok "critic paths: $label"; else bad "critic paths: $label (exit $code, wanted $want, pattern '$pat'): $out"; fi
+}
+cvp "a tiny change under a critic path is major and needs a verdict" 1 "touches critic path Kiln/Store/\*\*" '["Kiln/Store/**"]' Kiln/Store/Pay.txt "No verdict."
+cvp "the same change with a verdict passes" 0 "touches critic path" '["Kiln/Store/**"]' Kiln/Store/Pay.txt "**Critic verdict:** APPROVE"
+cvp "a change outside the critic paths is not major" 0 "Not major" '["Kiln/Store/**"]' Kiln/Other/Pay.txt
+cvp "an empty criticPaths changes nothing" 0 "Not major" '[]' Kiln/Store/Pay.txt
+cvp "criticPaths of the wrong type is a config error" 2 "criticPaths must be" '"Kiln/Store"' Kiln/Store/Pay.txt
+cvp "criticPaths with an empty string is a config error" 2 "criticPaths must be" '[""]' Kiln/Store/Pay.txt
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+for v in '"Kiln/Store"' '[""]' '[1]'; do
+  python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" "$v" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = json.loads(sys.argv[3]); json.dump(d, open(sys.argv[2], "w"))
+PY
+  refuses "app_config refuses criticPaths $v" "$T/cfg" python3 "$K/lib/app_config.py" "$T/cfg"
+done
+python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = ["Kiln/Store/**"]; json.dump(d, open(sys.argv[2], "w"))
+PY
+python3 "$K/lib/app_config.py" "$T/cfg" >/dev/null && ok "app_config accepts criticPaths" || bad "app_config rejected a valid criticPaths"
+python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["criticPaths"]==[] else 1)' "$K/templates/app/.claude/app.json" && ok "template app.json has an empty criticPaths" || bad "template app.json criticPaths is not []"
+
 # Agents: each file must parse as an agent Claude Code will load, with its
 # name matching the file (a mismatch or missing field loses the agent silently).
 if out=$(python3 - "$K/agents" <<'PY'
