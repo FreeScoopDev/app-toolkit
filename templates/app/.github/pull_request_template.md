@@ -18,9 +18,11 @@
 
 ## Critic
 
-**Critic verdict:** <!-- APPROVE, APPROVE WITH FINDINGS or BLOCK: the final run's verdict.
-     Required on a major change (a feat/ branch, or more Swift than criticMinLines
-     in .claude/app.json); the "Critic verdict" check reads this line. Otherwise
+**Critic verdict:** <!-- APPROVE, APPROVE WITH FINDINGS or BLOCK, then " @ " and the
+     short sha the critic reviewed, e.g. APPROVE @ 1a2b3c4: the final run's verdict.
+     Required on a major change (a feat/ branch, more Swift than criticMinLines
+     in .claude/app.json, or a path in its criticPaths); the "Critic verdict" check
+     reads this line, and fails if code changed after that sha. Otherwise
      write "not major". -->
 
 **Spec:** <!-- the spec file's path, e.g. App/feat/thing.md. The path only: no link. -->

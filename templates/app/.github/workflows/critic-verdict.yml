@@ -1,6 +1,6 @@
 # Fails a major PR whose description records no critic verdict, or a BLOCK
 # verdict (PROCESS.md, Every change). "Major" is criticMinLines in
-# .claude/app.json; the logic is scripts/critic_verdict.py.
+# .claude/app.json (the base branch's copy too, the stricter wins), as is criticPaths; the logic is scripts/critic_verdict.py.
 #
 # A workflow of its own, not a job in guards.yml, because it must re-run when
 # the PR description is edited ("edited"), and SwiftLint need not. Add

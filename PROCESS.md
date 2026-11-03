@@ -48,8 +48,13 @@ Claude, in a worktree of its own for each branch:
    repo path, the diff range (`origin/main...HEAD`) and the spec file; fixes
    every BLOCK finding, pushes, and runs it once more on the fixes until the
    verdict is not BLOCK. It runs once the branch is a stable build (slice
-   complete, checks green), not after each intermediate push. Records the final verdict in the PR description's `**Critic
-   verdict:**` line, and the spec's path (the path only: the specs repo is
+   complete, checks green), not after each intermediate push. Records the final
+   verdict in the PR description's `**Critic verdict:** <KIND> @ <sha>` line,
+   where `<sha>` is the commit the critic reports it reviewed. After a later
+   push, runs the critic again only if counted code changed since that commit
+   (release notes, docs and tests-only edits do not need a second review); a
+   build that was blocked and then fixed gets a second round on the fixed head.
+   Records the spec's path (the path only: the specs repo is
    private, so never a link) on the `**Spec:**` line. Appends each run's
    findings to the spec file under `## Critic` and pushes it. If the PR adds
    or changes tests, also runs `test-auditor` on them and fixes what it finds.
@@ -83,14 +88,31 @@ Claude, in a worktree of its own for each branch:
 A change is **major** when its branch starts with `feat/`, or it changes more
 than `criticMinLines` lines of Swift (added plus deleted, from `.claude/app.json`;
 the template starts at 40) outside the test targets (`unitTestTarget`,
-`uiTestTarget`). The number is a starting point, not a measured threshold:
-change it in the app's `app.json`, and the process and the check follow.
+`uiTestTarget`), or it touches any of the app's `criticPaths` (plain paths or
+globs in `.claude/app.json`, none by default; exclude and `:` magic pathspecs
+are refused). The number is a starting point, not a
+measured threshold: change it in the app's `app.json`, and the process and the
+check follow. `criticPaths` is consequence, not size: changes to money or
+purchases, privacy or data collection, persistence or migrations,
+authentication, or the verification gates themselves are major whatever their
+size, so each app lists where those live.
 
 The **Critic verdict** check (`.github/workflows/critic-verdict.yml`, logic in
 `scripts/critic_verdict.py`) applies the same definition to every PR and fails
 a major one whose description has no verdict line, or whose verdict is BLOCK.
-Editing the description re-runs it. It proves a verdict was recorded, not that
-the review was good. An app with no remote has no PR and no check: the spec
+When the verdict carries `@ <sha>`, the check also fails if that commit is not
+an ancestor of the PR head, or if counted code (the Swift and `criticPaths`
+rule above) changed after it; a verdict with no sha still passes, with a
+warning. Merging main in after the review adds nothing; only the PR's own
+commits (and a merge's conflict resolutions) count. The check is Swift-only
+(it counts `*.swift` plus `criticPaths`), and it reads `criticMinLines`,
+`criticPaths` and the test targets from both the base and the head, using the
+lower limit, the union of paths, and only the test directories both name. It
+cannot police an edit to its own script. Listing `scripts/critic_verdict.py`
+and `.claude/app.json` in `criticPaths` makes accidental edits major (for
+`app.json` because the base's `criticPaths` are unioned in), but the critic is
+the control for a deliberate one. Editing the description re-runs it. It proves a
+verdict was recorded for this code, not that the review was good. An app with no remote has no PR and no check: the spec
 file's `## Critic` section is the record.
 
 **Findings become standing checks.** When the critic finds the same class of
@@ -216,12 +238,15 @@ branch builds on 2026-10-20 used about 1.05 billion cache-read tokens, 78% of
 it in subagents that each re-read a 350-650K context on every call, all on
 the most expensive model. These rules keep that down; they apply to every app.
 
-1. **Builds and mechanical checks run on Sonnet.** A subagent that implements
-   a branch from its spec, `test-auditor` and `release-checker` run on
-   `sonnet` (the two agents are set that way in `agents/`; pass
-   `model: sonnet` on a build subagent). Opus is for design, specs and the
-   `critic`. If a Sonnet build fails twice on the same problem, stop and hand
-   it to Opus with what was tried, rather than letting it loop.
+1. **Choose the model by task complexity and consequence.** Bounded,
+   well-specified work runs on Sonnet: a subagent that implements a branch from
+   its spec, `test-auditor` and `release-checker` (the two agents are set that
+   way in `agents/`; pass `model: sonnet` on a build subagent). Complex
+   architecture, concurrency, persistence, security and hard diagnosis may
+   start on Opus. The `critic` stays on a strong model and independent of the
+   builder. Escalate to Opus when a build fails twice on the same problem, or
+   review findings show it is not converging, handing over the spec, the
+   commit, the evidence and what was tried, rather than letting it loop.
 2. **Small, finishing builds.** One build subagent gets one slice, not a
    whole milestone: it commits, pushes and stops. Past about 300K tokens of
    context, or 150 tool calls with no push, end it and start a fresh agent
@@ -230,7 +255,7 @@ the most expensive model. These rules keep that down; they apply to every app.
    merges, or at about 300K context, write a handoff note (state, open PRs,
    next step) and start a new session or `/compact`. Joe does the restart.
 4. **The critic runs once per stable build** (see "Major changes"), not on
-   every push. It stays on Opus: it is the only reviewer, so this rule cuts
+   every push. It stays on Opus, the strong model of rule 1: it is the only reviewer, so this rule cuts
    how often it runs, not how well.
 5. **Few parallel builds.** Separate worktrees are still how independent
    slices run side by side, but start the fewest that keep Joe unblocked,
