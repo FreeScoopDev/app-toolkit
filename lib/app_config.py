@@ -54,8 +54,8 @@ def main() -> None:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         fail("criticMinLines must be a whole number of lines, 0 or more")
     paths = cfg.get("criticPaths", [])
-    if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
-        fail("criticPaths must be a list of non-empty git pathspecs")
+    if not isinstance(paths, list) or not all(isinstance(p, str) and p and not p.startswith(":") for p in paths):
+        fail("criticPaths must be a list of non-empty plain paths or globs (no ':' exclude or magic pathspecs)")
 
     q = shlex.quote
     print(f"APP_NAME={q(cfg['app'])}")

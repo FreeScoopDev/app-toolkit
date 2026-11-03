@@ -88,8 +88,9 @@ Claude, in a worktree of its own for each branch:
 A change is **major** when its branch starts with `feat/`, or it changes more
 than `criticMinLines` lines of Swift (added plus deleted, from `.claude/app.json`;
 the template starts at 40) outside the test targets (`unitTestTarget`,
-`uiTestTarget`), or it touches any of the app's `criticPaths` (git pathspecs in
-`.claude/app.json`, none by default). The number is a starting point, not a
+`uiTestTarget`), or it touches any of the app's `criticPaths` (plain paths or
+globs in `.claude/app.json`, none by default; exclude and `:` magic pathspecs
+are refused). The number is a starting point, not a
 measured threshold: change it in the app's `app.json`, and the process and the
 check follow. `criticPaths` is consequence, not size: changes to money or
 purchases, privacy or data collection, persistence or migrations,
@@ -102,8 +103,14 @@ a major one whose description has no verdict line, or whose verdict is BLOCK.
 When the verdict carries `@ <sha>`, the check also fails if that commit is not
 an ancestor of the PR head, or if counted code (the Swift and `criticPaths`
 rule above) changed after it; a verdict with no sha still passes, with a
-warning. Editing the description re-runs it. It proves a verdict was recorded
-for this code, not that the review was good. An app with no remote has no PR and no check: the spec
+warning. Merging main in after the review adds nothing; only the PR's own
+commits (and a merge's conflict resolutions) count. The check is Swift-only
+(it counts `*.swift` plus `criticPaths`), and it reads `criticMinLines` and
+`criticPaths` from both the base and the head, using the lower limit and the
+union of paths. It cannot police an edit to its own script, which is why
+`scripts/critic_verdict.py` and `.claude/app.json` belong in `criticPaths` and
+get the critic's review. Editing the description re-runs it. It proves a
+verdict was recorded for this code, not that the review was good. An app with no remote has no PR and no check: the spec
 file's `## Critic` section is the record.
 
 **Findings become standing checks.** When the critic finds the same class of
@@ -246,7 +253,7 @@ the most expensive model. These rules keep that down; they apply to every app.
    merges, or at about 300K context, write a handoff note (state, open PRs,
    next step) and start a new session or `/compact`. Joe does the restart.
 4. **The critic runs once per stable build** (see "Major changes"), not on
-   every push. It stays on Opus: it is the only reviewer, so this rule cuts
+   every push. It stays on Opus, the strong model of rule 1: it is the only reviewer, so this rule cuts
    how often it runs, not how well.
 5. **Few parallel builds.** Separate worktrees are still how independent
    slices run side by side, but start the fewest that keep Joe unblocked,

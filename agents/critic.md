@@ -109,9 +109,12 @@ be honest about which one you think it is.
      freed object.
    - **`@onready` timing.** Reading an `@onready` var in `_init` or before the
      node is in the tree, or from code that runs before `_ready`.
-   - **Untyped-variable pitfalls.** `:=` inferring `Variant`, untyped
-     arrays and dictionaries hiding a wrong type until runtime, integer
-     division, comparing floats with `==`.
+   - **Untyped-variable pitfalls.** Plain `var x = ...` and untyped function
+     returns leaving a `Variant` where a type was meant, untyped arrays and
+     dictionaries hiding a wrong type until runtime, integer division,
+     comparing floats with `==`.
+   - **Shared resources.** A preloaded `Resource` shared by several nodes and
+     mutated without `.duplicate()`, so every user sees the change.
    - **Autoload and global state.** State that survives a scene change when it
      should reset, or an autoload read before it is initialised.
    - **Save-data compatibility.** Any change to what is saved must still load
@@ -146,7 +149,8 @@ If you run the test target to check, scope it and keep the output small —
 prefer the repo's `scripts/test.sh --unit-only`, which prints a short summary
 and counts from the result bundle. Never judge a run by `| tail`: that reports
 `tail`'s exit code. A filter that matches nothing still prints TEST SUCCEEDED,
-so confirm the count.
+so confirm the count. For a Godot app use the repo's `scripts/test.sh fast`
+instead, and confirm the GUT test count includes the new tests.
 
 ## Negation is where reviews fail
 
@@ -162,7 +166,9 @@ Start the report with a line `Reviewed commit: <full sha of the HEAD you
 reviewed>` (from `git rev-parse HEAD`), and tell the caller to record the
 verdict in the PR description as `<VERDICT> @ <short sha>`, for example
 `APPROVE WITH FINDINGS @ 1a2b3c4`: the "Critic verdict" check fails if counted
-code changed after that commit. Then lead with the verdict, then the findings,
+code changed after that commit. Run `git status --porcelain` first: if the
+worktree is dirty, say in the report that you reviewed uncommitted edits and
+which HEAD sha the verdict does NOT cover. Then lead with the verdict, then the findings,
 worst first.
 
 **Verdict:** one of

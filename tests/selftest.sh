@@ -165,10 +165,12 @@ cvs() {
   git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm reviewed
   r=$(git -C "$T/Kiln" rev-parse --short=9 HEAD)
   if [[ $n -gt 0 ]]; then
-    mkdir -p "$T/Kiln/$(dirname "$file")"; seq "$n" | sed 's/^/let y = /' > "$T/Kiln/$file"
+    mkdir -p "$T/Kiln/$(dirname "$file")"
+    if [[ -n ${CVS_BIN:-} ]]; then printf '\0\1\2' > "$T/Kiln/$file"; else seq "$n" | sed 's/^/let y = /' > "$T/Kiln/$file"; fi
     git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm later
   fi
   h=$(git -C "$T/Kiln" rev-parse HEAD)
+  [[ -z ${CVS_TAG:-} ]] || git -C "$T/Kiln" tag -f "$CVS_TAG" "$h" >/dev/null
   suffix=${suffix//@R@/$r}; suffix=${suffix//@H@/${h:0:9}}
   if [[ -n $paths ]]; then
     python3 - "$T/Kiln/.claude/app.json" "$paths" <<'PY'
@@ -176,17 +178,24 @@ import json, sys
 d = json.load(open(sys.argv[1])); d["criticPaths"] = json.loads(sys.argv[2]); json.dump(d, open(sys.argv[1], "w"))
 PY
   fi
-  out=$(cd "$T/Kiln" && PR_BODY="**Critic verdict:** APPROVE$suffix" python3 scripts/critic_verdict.py "$CV_BASE" "$h" feat/x 2>&1) || code=$?
+  out=$(cd "$T/Kiln" && PR_BODY="**Critic verdict:** ${CVS_KIND:-APPROVE}$suffix" python3 scripts/critic_verdict.py "$CV_BASE" "$h" feat/x 2>&1) || code=$?
   git -C "$T/Kiln" checkout -q -- .claude/app.json 2>/dev/null || true
   if [[ $code -eq $want ]] && grep -qE -- "$pat" <<<"$out"; then ok "critic verdict: $label"; else bad "critic verdict: $label (exit $code, wanted $want, pattern '$pat'): $out"; fi
 }
 cvs "sha equal to head passes" 0 "is the head" " @ @R@" x 0
 cvs "stale sha with counted Swift after it fails" 1 "predates 5 changed lines" " @ @R@" Kiln/B.swift 5
-cvs "stale sha with only docs after it passes" 0 "only docs, notes or tests" " @ @R@" docs/notes.md 99
+cvs "stale sha with only docs after it passes" 0 "no counted code" " @ @R@" docs/notes.md 99
 cvs "stale sha with a criticPaths file changed after it fails" 1 "predates 3 changed lines" " @ @R@" Kiln/Store/Pay.txt 3 '["Kiln/Store/**"]'
-cvs "stale sha with only test-target changes after it passes" 0 "only docs, notes or tests" " @ @R@" KilnTests/BTests.swift 99
-cvs "missing sha passes with a warning" 0 "WARNING: the verdict is not tied to a commit" "" x 0
-cvs "missing sha still passes when code changed" 0 "WARNING: the verdict is not tied to a commit" "" Kiln/B.swift 5
+cvs "stale sha with only test-target changes after it passes" 0 "no counted code" " @ @R@" KilnTests/BTests.swift 99
+cvs "missing sha passes with a warning" 0 "::warning::The critic verdict is not tied" "" x 0
+cvs "missing sha still passes when code changed" 0 "::warning::The critic verdict is not tied" "" Kiln/B.swift 5
+CVS_KIND=BLOCK cvs "BLOCK @ the head sha still fails" 1 "is BLOCK" " @ @R@" x 0
+cvs "sha in backticks passes" 0 "is the head" ' @ `@R@`' x 0
+cvs "sha with a trailing period passes" 0 "is the head" ' @ @R@.' x 0
+cvs "prose @ elsewhere in the verdict is not a sha (PlowR 193 style)" 0 "::warning::The critic verdict is not tied" ' WITH FINDINGS. Run 1 was BLOCK: removes a stray `@ViewBuilder` and an @ sign' x 0
+cvs "an @ right after the kind with junk after it fails" 1 "7 to 40 hex" " @ zzz" x 0
+CVS_TAG=deadbee1 cvs "a tag named like a hex prefix is not a sha" 1 "not a single commit" " @ deadbee1" x 0
+CVS_BIN=1 cvs "stale sha with a binary criticPaths file after it fails" 1 "predates 1 changed lines" " @ @R@" Kiln/Store/b.bin 1 '["Kiln/Store/**"]'
 cvs "unresolvable sha fails" 1 "not a single commit" " @ deadbeef0" x 0
 cvs "a sha that is not hex fails" 1 "7 to 40 hex" " @ main" x 0
 cvs "a too-short sha fails" 1 "7 to 40 hex" " @ abc12" x 0
@@ -215,8 +224,51 @@ cvp "a change outside the critic paths is not major" 0 "Not major" '["Kiln/Store
 cvp "an empty criticPaths changes nothing" 0 "Not major" '[]' Kiln/Store/Pay.txt
 cvp "criticPaths of the wrong type is a config error" 2 "criticPaths must be" '"Kiln/Store"' Kiln/Store/Pay.txt
 cvp "criticPaths with an empty string is a config error" 2 "criticPaths must be" '[""]' Kiln/Store/Pay.txt
+cvp "an exclude pathspec in criticPaths is a config error" 2 "criticPaths must be" '["Kiln/Store", ":!Kiln/Store/README.md"]' Kiln/Store/Pay.txt
+cvp "a magic pathspec in criticPaths is a config error" 2 "criticPaths must be" '[":(glob)Kiln/**"]' Kiln/Store/Pay.txt
+cvp "several plain criticPaths: the matching one is named" 0 "touches critic path Kiln/Store" '["Kiln/Auth/**", "Kiln/Store"]' Kiln/Store/Pay.txt "**Critic verdict:** APPROVE"
+cvp "a README outside the critic paths is not major" 0 "Not major" '["Kiln/Auth/**", "Kiln/Store"]' Kiln/README.md
+
+# Merges after the review: main's lines are not the PR's. R (the reviewed
+# commit) adds C.swift; main gains 100 Swift lines; the branch merges main.
+cvmerge() { # cvmerge <label> <want exit> <pattern> <conflict: 0|1>
+  local label=$1 want=$2 pat=$3 conflict=$4 code=0 r m h out
+  git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+  seq 100 | sed 's/^/let m = /' > "$T/Kiln/Kiln/M.swift"; [[ $conflict == 1 ]] && echo 'let c = 1' > "$T/Kiln/Kiln/C.swift"
+  git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm main-gains
+  m=$(git -C "$T/Kiln" rev-parse HEAD)
+  git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+  seq 50 | sed 's/^/let x = /' > "$T/Kiln/Kiln/A.swift"; [[ $conflict == 1 ]] && echo 'let c = 2' > "$T/Kiln/Kiln/C.swift"
+  git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm reviewed
+  r=$(git -C "$T/Kiln" rev-parse --short=9 HEAD)
+  if git -C "$T/Kiln" merge -q --no-edit "$m" >/dev/null 2>&1; then :; else
+    seq 7 | sed 's/^/let z = /' > "$T/Kiln/Kiln/C.swift"; git -C "$T/Kiln" add -A; git -C "$T/Kiln" commit -qm "merge main" >/dev/null
+  fi
+  h=$(git -C "$T/Kiln" rev-parse HEAD)
+  out=$(cd "$T/Kiln" && PR_BODY="**Critic verdict:** APPROVE @ $r" python3 scripts/critic_verdict.py "$CV_BASE" "$h" feat/x 2>&1) || code=$?
+  if [[ $code -eq $want ]] && grep -qE -- "$pat" <<<"$out"; then ok "critic verdict: $label"; else bad "critic verdict: $label (exit $code, wanted $want, pattern '$pat'): $out"; fi
+}
+cvmerge "a clean merge of main after the review adds nothing" 0 "no counted code" 0
+cvmerge "a conflict resolution in counted Swift after the review counts" 1 "predates [0-9]+ changed lines" 1
+
+# The gate reads the base's app.json too: a PR cannot loosen its own gate.
 git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
-for v in '"Kiln/Store"' '[""]' '[1]'; do
+python3 - "$T/Kiln/.claude/app.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = ["Kiln/Store"]; d["criticMinLines"] = 5; json.dump(d, open(sys.argv[1], "w"))
+PY
+git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm "base lists critic paths"
+TBASE=$(git -C "$T/Kiln" rev-parse HEAD)
+python3 - "$T/Kiln/.claude/app.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["criticPaths"] = []; d["criticMinLines"] = 9999; json.dump(d, open(sys.argv[1], "w"))
+PY
+mkdir -p "$T/Kiln/Kiln/Store"; echo one > "$T/Kiln/Kiln/Store/Pay.txt"; seq 20 | sed 's/^/let t = /' > "$T/Kiln/Kiln/T.swift"
+git -C "$T/Kiln" add -A && git -C "$T/Kiln" commit -qm "head loosens the config"
+out=$(cd "$T/Kiln" && PR_BODY="" python3 scripts/critic_verdict.py "$TBASE" "$(git -C "$T/Kiln" rev-parse HEAD)" fix/x 2>&1) && code=0 || code=$?
+if [[ $code -eq 1 ]] && grep -q "touches critic path Kiln/Store" <<<"$out" && grep -q "(limit 5)" <<<"$out"; then ok "critic verdict: base config tamper (paths emptied, limit raised) is still major"; else bad "critic verdict: base config tamper (exit $code): $out"; fi
+git -C "$T/Kiln" checkout -q --detach "$CV_BASE"
+for v in '"Kiln/Store"' '[""]' '[1]' '[":!x"]'; do
   python3 - "$T/Kiln/.claude/app.json" "$T/cfg/.claude/app.json" "$v" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); d["criticPaths"] = json.loads(sys.argv[3]); json.dump(d, open(sys.argv[2], "w"))
