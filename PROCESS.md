@@ -234,9 +234,10 @@ record had to be rebuilt afterwards.
 ## Token budget
 
 Claude's usage has a 5-hour and a weekly limit. One night of parallel
-branch builds on 2026-10-20 used about 1.05 billion cache-read tokens, 78% of
-it in subagents that each re-read a 350-650K context on every call, all on
-the most expensive model. These rules keep that down; they apply to every app.
+branch builds on 2026-10-20 used an outsized share of it, most of it in
+subagents that each re-read a context of several hundred thousand tokens on
+every call, all on the most expensive model. These rules keep that down;
+they apply to every app.
 
 1. **Choose the model by task complexity and consequence.** Bounded,
    well-specified work runs on Sonnet: a subagent that implements a branch from
@@ -288,19 +289,20 @@ the most expensive model. These rules keep that down; they apply to every app.
   incoming commits and files. Claude shows Joe that list and fast-forwards
   `~/.claude/toolkit` only after he says yes.
 - Every branch is pushed. A repo with no remote has no copy when a disk or a
-  sync goes wrong (the 2026-09-26 iCloud move cost SqwatrApp its history).
+  sync goes wrong (the 2026-09-26 iCloud move cost one project its history).
 - In multi-step shell, `set -euo pipefail`. A failing guard does not stop a
   `&&` chain on the next line.
 
-**Private repos.** Repos are public by default; private is for client work
-(JDayOffroad). On GitHub's free plan a private repo can have no ruleset or
-branch protection (the API answers 403) and no auto-merge, so nothing on
-GitHub enforces the gate and the steps above that rely on it do not apply.
+**Private repos.** A repo may be public or private; the rules above assume a
+public one, and a private one differs as follows. On GitHub's free plan a
+private repo can have no ruleset or branch protection (the API answers 403)
+and no auto-merge, so nothing on GitHub enforces the gate and the steps
+above that rely on it do not apply.
 The gate is then a rule: a branch merges only after `scripts/test.sh`
 passes locally and its Linux checks are green, and the app's `CLAUDE.md`
 says who merges. Never add a macOS job to a private repo casually: GitHub
-bills macOS minutes there at 10x, an estimated $264 per 15 days at the
-live apps' load.
+bills macOS minutes there at 10x, which adds up fast at a live app's CI
+load.
 
 ## Verifying claims
 

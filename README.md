@@ -1,9 +1,8 @@
 # Shared app toolkit
 
-The shared pipeline for every iOS app Joe works on, currently PlowR and
-Wockett. Created 2026-09-27. It lives here, outside the app repos, so no app
-depends on another: each repo carries a small config, thin wrappers, and a
-`CLAUDE.md` that imports `PROCESS.md` from here.
+The shared pipeline for Joe's apps, iOS and Godot. Created 2026-09-27. It
+lives here, outside the app repos, so no app depends on another: each repo
+carries a small config, thin wrappers, and a `CLAUDE.md` that imports `PROCESS.md` from here.
 
 GitHub: `FreeScoopDev/app-toolkit`, public since 2026-09-27 (scripts and docs
 only; nothing private goes in). Checked out at `~/.claude/toolkit`.
