@@ -38,9 +38,9 @@ merge, and a "Protect main" ruleset requiring **SwiftLint**. `Unit tests
 (iOS)` is required in part 4, once it has passed on a PR: a required check
 that has never reported blocks every PR.
 
-The repo is public by default, which is what makes the macOS test runner
-free and the ruleset possible. A private repo (client work) gets neither on
-the free plan; before creating one, read PROCESS.md, "Private repos", and
+The script creates the repo public, which is what makes the macOS test
+runner free and the ruleset possible. A private repo gets neither on the
+free plan; before creating one, read PROCESS.md, "Private repos", and
 expect to remove `tests.yml`.
 
 Then Claude works in one worktree per branch, in a folder beside Joe's
