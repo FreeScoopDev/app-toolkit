@@ -262,7 +262,18 @@ they apply to every app.
    slices run side by side, but start the fewest that keep Joe unblocked,
    and stagger a batch when the 5-hour window is above about 60%
    (`get_usage` shows it).
-6. **Report the cost.** A build or critic subagent's final summary includes
+6. **No long waits in a big context.** Every check on a background job
+   resends the agent's whole context, and a gap of more than a few minutes
+   between calls expires the cache, so the next call rebuilds all of it at
+   full price. An agent past about 150K tokens of context must not wait on
+   a job that runs longer than about 10 minutes (balance sweeps, full test
+   suites, long exports). It commits what it has, writes the exact command
+   and where its output lands into its handoff note, and stops. A fresh
+   agent, or a Cloud session for read-only runs, picks up the result. A
+   short wait uses one `Monitor` with a long timeout, never a sleep or
+   `until` loop re-run every few minutes. Builders keep rule 2's limits
+   while waiting: waiting is not an exception to them.
+7. **Report the cost.** A build or critic subagent's final summary includes
    its call count and whether it hit a limit above, so the next brief is
    sized from real numbers.
 
